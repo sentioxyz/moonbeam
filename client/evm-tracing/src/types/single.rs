@@ -31,9 +31,10 @@ use sp_std::{collections::btree_map::BTreeMap, vec::Vec};
 pub enum Call {
 	Blockscout(crate::formatters::blockscout::BlockscoutCall),
 	CallTracer(crate::formatters::call_tracer::CallTracerCall),
+	SentioTracer(crate::formatters::sentio_tracer::SentioCallTracerCall)
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Encode, Decode)]
+#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode)]
 pub enum TraceType {
 	/// Classic geth with no javascript based tracing.
 	Raw {
@@ -45,6 +46,9 @@ pub enum TraceType {
 	CallList,
 	/// A single block trace. Use in `debug_traceTransactionByNumber` / `traceTransactionByHash`.
 	Block,
+	SentioCallList {
+		tracerConfig: String
+	}
 }
 
 /// Single transaction trace.

@@ -55,6 +55,7 @@ pub enum TracerInput {
 	None,
 	Blockscout,
 	CallTracer,
+	SentioTracer
 }
 
 /// DebugRuntimeApi V2 result. Trace response is stored in client and runtime api call response is
