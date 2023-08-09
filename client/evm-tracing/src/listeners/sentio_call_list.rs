@@ -17,12 +17,17 @@
 use crate::formatters::blockscout::BlockscoutCall as Call;
 use crate::formatters::blockscout::BlockscoutCallInner as CallInner;
 use crate::types::{CallResult, CallType, ContextType, CreateResult, sentio};
-use ethereum_types::{H160, U256};
+use ethereum_types::{H160, H256, U256};
 use evm_tracing_events::{
 	runtime::{Capture, ExitError, ExitReason, ExitSucceed},
 	Event, EvmEvent, GasometerEvent, Listener as ListenerT, RuntimeEvent, StepEventFilter,
 };
-use std::{collections::btree_map::BTreeMap, vec, vec::Vec};
+use std::{collections::{btree_map::BTreeMap, HashMap}, vec, vec::Vec};
+use std::ptr::null;
+use ethereum::Log;
+use hex::ToHex;
+use evm_tracing_events::runtime::{Memory, Opcode, Stack};
+use crate::types::sentio::{BaseSentioTrace, SentioCallTrace, SentioEventTrace, SentioTrace};
 
 /// Enum of the different "modes" of tracer for multiple runtime versions and
 /// the kind of EVM events that are emitted.
@@ -37,7 +42,17 @@ enum TracingVersion {
 }
 
 pub struct Listener {
-	tracerConfig : sentio::SentioTracerConfig,
+	tracer_config: sentio::SentioTracerConfig,
+	function_map: HashMap<String, HashMap<u64, sentio::FunctionInfo>>,
+	call_map: HashMap<String, HashMap<u64, bool>>,
+	// TODO env
+
+	previous_jump: *const sentio::SentioCallTrace,
+	index: i32,
+	entry_pc: HashMap<u64, bool>,
+
+	call_stack: Vec<sentio::SentioCallTrace>, // can only be call trace or internal trace
+	gas_limit: u64,
 
 	/// Version of the tracing.
 	/// Defaults to legacy, and switch to a more modern version if recently added events are
@@ -105,7 +120,16 @@ struct Context {
 impl Listener {
 	pub fn new(config: sentio::SentioTracerConfig) -> Self {
 		Self {
-			tracerConfig: config,
+			tracer_config: config,
+			function_map: Default::default(),
+			call_map: Default::default(),
+			previous_jump: null(),
+			index: 0,
+			entry_pc: Default::default(),
+			call_stack: vec![],
+			gas_limit: 0,
+
+			// TODO remove all the rest
 			version: TracingVersion::Legacy,
 			transaction_cost: 0,
 
@@ -242,6 +266,93 @@ impl Listener {
 
 	pub fn runtime_event(&mut self, event: RuntimeEvent) {
 		match event {
+			RuntimeEvent::Step { context, opcode, position, stack, memory } => {
+				let pc = *position.as_ref().unwrap_or(&0);
+				let op = to_opcode(&opcode);
+
+				self.index = self.index + 1;
+
+				if self.call_stack[0].base.start_index == -1 && self.entry_pc[&pc] {
+					self.call_stack[0].base.pc = pc;
+					self.call_stack[0].base.start_index = self.index - 1;
+					self.previous_jump = null();
+					return;
+				}
+				let base_trace = BaseSentioTrace  {
+					pc,
+					start_index: self.index - 1,
+					end_index: self.index,
+					op: opcode,
+					gas: 0,
+					gas_used: 0,
+					gas_cost: 0,
+					error: vec![],
+					revert_reason: vec![],
+				};
+				match op {
+					Opcode::CREATE | Opcode::CREATE2  | Opcode::CALL | Opcode::CALLCODE | Opcode::DELEGATECALL | Opcode::STATICCALL | Opcode::SUICIDE => {
+						let mut call_trace: SentioCallTrace = SentioCallTrace::default();
+						call_trace.base = base_trace;
+						self.call_stack.push(call_trace)
+					}
+					Opcode::LOG0 | Opcode::LOG1 | Opcode::LOG2 | Opcode::LOG3 | Opcode::LOG4 => {
+						let stack = stack.expect("stack data to not be filtered out");
+						let memory = memory.expect("memory data to not be filtered out");
+
+						let topic_count = (op.as_u8() - Opcode::LOG0.as_u8()) as i32;
+						let log_offset = stack_back(&stack, 1);
+						let log_size =  stack_back(&stack, 2);
+						let data = copy_memory(&memory, log_offset.to_low_u64_be() as usize, log_size.to_low_u64_be() as usize);
+						let mut topics: Vec<H256> = Vec::new();
+						for i in 0..topic_count {
+							topics.push(*stack_back(&stack, 2+i))
+						}
+
+						let log_trace = SentioEventTrace {
+							base: base_trace,
+							log: Log {
+								address: context.address,
+								topics,
+								data,
+							},
+						};
+						let last = self.call_stack.last_mut().expect("call stack should not be empty");
+						last.traces.push(SentioTrace::EventTrace(log_trace))
+					}
+					Opcode::JUMP => {
+						if !self.tracer_config.with_internal_calls {
+							return
+						}
+
+						// TODO this might need to be caller address
+						let from = context.address;
+						let mut jump = SentioCallTrace::default();
+						jump.base = base_trace;
+						jump.from = from;
+
+						if self.previous_jump != null() {
+							log::error!("Unexpected previous jump {}", self.index)
+						}
+						self.previous_jump = &jump;
+						// TODO unset this in step result
+					}
+					Opcode::JUMPDEST => {
+						if !self.tracer_config.with_internal_calls {
+							return
+						}
+						let from = context.address;
+						// https://inflambda.tech/post/2022-06-21-rust-ffi-string.html
+						let from_string = format!("{:#042x}", from);
+
+						if self.previous_jump != null() {
+							let stack_size =
+
+						}
+
+					}
+					_ => todo!()
+				}
+			}
 			RuntimeEvent::StepResult {
 				result: Err(Capture::Trap(opcode)),
 				..
@@ -1131,3 +1242,191 @@ mod tests {
 		assert_eq!(listener.entries[0].len(), (depth * (subdepth + 1)) + 1);
 	}
 }
+
+fn stack_back(stack: &Stack, n: i32) -> &H256 {
+	return stack.data.get(stack.data.len() - (n as usize) - 1).expect("stack shouldn't be empty")
+}
+
+fn copy_stack(stack: &Stack, copy_size: usize) -> Vec<H256> {
+	// return stack.data.get(stack.data.len() - n - 1)
+	let stack_size= stack.data.len();
+	let mut res: Vec<H256> = Vec::with_capacity(stack_size);
+	for i in (stack_size-copy_size)..stack_size {
+		res[i] = stack.data[i]
+	}
+	return res
+}
+
+fn copy_memory(memory: &Memory, offset: usize, size: usize) -> Vec<u8> {
+	if memory.data.len() > offset {
+		let mut end = offset + size;
+		if memory.data.len() > end {
+			end = memory.data.len()
+		}
+		return Vec::from_iter(memory.data[offset..end].iter().cloned())
+	}
+	return Vec::new()
+}
+
+pub fn to_opcode(opcode: &Vec<u8>) -> Opcode {
+	let op_string = std::str::from_utf8(&opcode).expect("");
+	let out = match op_string.as_ref() {
+		"Stop" => Opcode(0),
+		"Add" => Opcode(1),
+		"Mul" => Opcode(2),
+		"Sub" => Opcode(3),
+		"Div" => Opcode(4),
+		"SDiv" => Opcode(5),
+		"Mod" => Opcode(6),
+		"SMod" => Opcode(7),
+		"AddMod" => Opcode(8),
+		"MulMod" => Opcode(9),
+		"Exp" => Opcode(10),
+		"SignExtend" => Opcode(11),
+		"Lt" => Opcode(16),
+		"Gt" => Opcode(17),
+		"Slt" => Opcode(18),
+		"Sgt" => Opcode(19),
+		"Eq" => Opcode(20),
+		"IsZero" => Opcode(21),
+		"And" => Opcode(22),
+		"Or" => Opcode(23),
+		"Xor" => Opcode(24),
+		"Not" => Opcode(25),
+		"Byte" => Opcode(26),
+		"Shl" => Opcode(27),
+		"Shr" => Opcode(28),
+		"Sar" => Opcode(29),
+		"Keccak256" => Opcode(32),
+		"Address" => Opcode(48),
+		"Balance" => Opcode(49),
+		"Origin" => Opcode(50),
+		"Caller" => Opcode(51),
+		"CallValue" => Opcode(52),
+		"CallDataLoad" => Opcode(53),
+		"CallDataSize" => Opcode(54),
+		"CallDataCopy" => Opcode(55),
+		"CodeSize" => Opcode(56),
+		"CodeCopy" => Opcode(57),
+		"GasPrice" => Opcode(58),
+		"ExtCodeSize" => Opcode(59),
+		"ExtCodeCopy" => Opcode(60),
+		"ReturnDataSize" => Opcode(61),
+		"ReturnDataCopy" => Opcode(62),
+		"ExtCodeHash" => Opcode(63),
+		"BlockHash" => Opcode(64),
+		"Coinbase" => Opcode(65),
+		"Timestamp" => Opcode(66),
+		"Number" => Opcode(67),
+		"Difficulty" => Opcode(68),
+		"GasLimit" => Opcode(69),
+		"ChainId" => Opcode(70),
+		"Pop" => Opcode(80),
+		"MLoad" => Opcode(81),
+		"MStore" => Opcode(82),
+		"MStore8" => Opcode(83),
+		"SLoad" => Opcode(84),
+		"SStore" => Opcode(85),
+		"Jump" => Opcode(86),
+		"JumpI" => Opcode(87),
+		"GetPc" => Opcode(88),
+		"MSize" => Opcode(89),
+		"Gas" => Opcode(90),
+		"JumpDest" => Opcode(91),
+		"Push1" => Opcode(96),
+		"Push2" => Opcode(97),
+		"Push3" => Opcode(98),
+		"Push4" => Opcode(99),
+		"Push5" => Opcode(100),
+		"Push6" => Opcode(101),
+		"Push7" => Opcode(102),
+		"Push8" => Opcode(103),
+		"Push9" => Opcode(104),
+		"Push10" => Opcode(105),
+		"Push11" => Opcode(106),
+		"Push12" => Opcode(107),
+		"Push13" => Opcode(108),
+		"Push14" => Opcode(109),
+		"Push15" => Opcode(110),
+		"Push16" => Opcode(111),
+		"Push17" => Opcode(112),
+		"Push18" => Opcode(113),
+		"Push19" => Opcode(114),
+		"Push20" => Opcode(115),
+		"Push21" => Opcode(116),
+		"Push22" => Opcode(117),
+		"Push23" => Opcode(118),
+		"Push24" => Opcode(119),
+		"Push25" => Opcode(120),
+		"Push26" => Opcode(121),
+		"Push27" => Opcode(122),
+		"Push28" => Opcode(123),
+		"Push29" => Opcode(124),
+		"Push30" => Opcode(125),
+		"Push31" => Opcode(126),
+		"Push32" => Opcode(127),
+		"Dup1" => Opcode(128),
+		"Dup2" => Opcode(129),
+		"Dup3" => Opcode(130),
+		"Dup4" => Opcode(131),
+		"Dup5" => Opcode(132),
+		"Dup6" => Opcode(133),
+		"Dup7" => Opcode(134),
+		"Dup8" => Opcode(135),
+		"Dup9" => Opcode(136),
+		"Dup10" => 	Opcode(137),
+		"Dup11" => Opcode(138),
+		"Dup12" => Opcode(139),
+		"Dup13" => Opcode(140),
+		"Dup14" => Opcode(141),
+		"Dup15" => Opcode(142),
+		"Dup16" => Opcode(143),
+		"Swap1" => Opcode(144),
+		"Swap2" => Opcode(145),
+		"Swap3" => Opcode(146),
+		"Swap4" => Opcode(147),
+		"Swap5" => Opcode(148),
+		"Swap6" => Opcode(149),
+		"Swap7" => Opcode(150),
+		"Swap8" => Opcode(151),
+		"Swap9" => Opcode(152),
+		"Swap10" => Opcode(153),
+		"Swap11" => Opcode(154),
+		"Swap12" => Opcode(155),
+		"Swap13" => Opcode(156),
+		"Swap14" => Opcode(157),
+		"Swap15" => Opcode(158),
+		"Swap16" => Opcode(159),
+		"Log0" => Opcode(160),
+		"Log1" => Opcode(161),
+		"Log2" => 	Opcode(162),
+		"Log3" => Opcode(163),
+		"Log4" => Opcode(164),
+		"JumpTo" => Opcode(176),
+		"JumpIf" => Opcode(177),
+		"JumpSub" => Opcode(178),
+		"JumpSubv" => Opcode(180),
+		"BeginSub" => Opcode(181),
+		"BeginData" => Opcode(182),
+		"ReturnSub" => Opcode(184),
+		"PutLocal" => Opcode(185),
+		"GetLocal" => Opcode(186),
+		"SLoadBytes" => Opcode(225),
+		"SStoreBytes" => Opcode(226),
+		"SSize" => Opcode(227),
+		"Create" => Opcode(240),
+		"Call" => Opcode(241),
+		"CallCode" => Opcode(242),
+		"Return" => Opcode(243),
+		"DelegateCall" => Opcode(244),
+		"Create2" => Opcode(245),
+		"StaticCall" => Opcode(250),
+		"TxExecGas" => Opcode(252),
+		"Revert" => Opcode(253),
+		"Invalid" => Opcode(254),
+		"SelfDestruct" => Opcode(255),
+		_ => Opcode(0)
+	};
+	return out
+}
+
