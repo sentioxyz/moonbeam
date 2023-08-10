@@ -251,8 +251,9 @@ where
 					} else if tracer == "callTracer" {
 						Some(TracerInput::CallTracer)
 					} else if tracer == "sentioTracer" {
-						let config = tracerConfig.unwrap_or(serde_json::Value::default());
-						return Ok((TracerInput::SentioTracer, single::TraceType::SentioCallList { tracerConfig: config.to_string() }))
+						let config = tracerConfig.unwrap_or_default();
+						// TODO find a better way to pass config instead of serialize to string
+						return Ok((TracerInput::None, single::TraceType::SentioCallList { tracerConfig: config.to_string() }))
 					} else {
 						None
 					};
@@ -570,21 +571,11 @@ where
 						proxy.using(f)?;
 						proxy.finish_transaction();
 
-						let response = match tracer_input {
-							TracerInput::SentioTracer => {
-								let mut res =
-									moonbeam_client_evm_tracing::formatters::SentioTracer::format(
-										proxy,
-									)
-										.ok_or("Trace result is empty.")
-										.map_err(|e| internal_err(format!("{:?}", e)))?;
-								Ok(res.pop().expect("Trace result is empty."))
-							}
-							_ => Err(internal_err(
-								"Bug: failed to resolve the tracer format.".to_string(),
-							)),
-						}?;
-						Ok(Response::Single(response))
+						let mut res = moonbeam_client_evm_tracing::formatters::SentioTracer::format(proxy)
+								.ok_or("Trace result is empty.")
+								.map_err(|e| internal_err(format!("{:?}", e)))?;
+
+						Ok(Response::Single(res.pop().expect("Trace result is empty.")))
 					}
 					single::TraceType::CallList => {
 						let mut proxy = moonbeam_client_evm_tracing::listeners::CallList::default();

@@ -1,19 +1,18 @@
-use crate::types::sentio;
 use crate::types::serialization::*;
 
-use ethereum_types::{H160, U256};
+use ethereum_types::{H160, H256, U256};
 use ethereum::Log;
 use parity_scale_codec::{Decode, Encode};
 use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentioTracerConfig {
   #[serde(default)]
-  pub functions: std::collections::HashMap<String, FunctionInfo>,
+  pub functions: std::collections::HashMap<String, Vec<FunctionInfo>>,
 
   #[serde(default)]
-  pub calls: std::collections::HashMap<String, i64>,
+  pub calls: std::collections::HashMap<String, Vec<u64>>,
 
   #[serde(default)]
   pub debug: bool,
@@ -22,23 +21,26 @@ pub struct SentioTracerConfig {
   pub with_internal_calls: bool
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
 #[derive(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct FunctionInfo {
-  address:        String,
-  name:           String,
-  signature_hash: String,
-  pc:             i64,
-  input_size:     i32,
-  input_memory:   bool,
-  output_size:    i32,
-  output_memory:  bool
+  pub address:        H160,
+  pub name:           String,
+  pub signature_hash: String,
+  pub pc:             u64,
+  pub input_size:     u64,
+  pub input_memory:   bool,
+  pub output_size:    u64,
+  pub output_memory:  bool
 }
 
 #[derive(Clone, Eq, PartialEq, Default, Debug, Encode, Decode, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BaseSentioTrace {
+pub struct SentioBaseTrace {
+  // Only in debug mode, TODO p3, make it vec<u8> and have it serialize to json
+  pub tracer_config: Option<String>,
+
   #[serde(rename = "type", serialize_with = "opcode_serialize")]
   pub op: Vec<u8>,
   pub pc: u64,
@@ -62,6 +64,7 @@ pub struct BaseSentioTrace {
 pub enum SentioTrace {
   EventTrace(SentioEventTrace),
   CallTrace(SentioCallTrace),
+  OtherTrace(SentioBaseTrace)
   // InternalCallTrace(SentioInternalCallTrace)
 }
 
@@ -69,7 +72,7 @@ pub enum SentioTrace {
 #[serde(rename_all = "camelCase")]
 pub struct SentioEventTrace {
   #[serde(flatten)]
-  pub base: BaseSentioTrace,
+  pub base: SentioBaseTrace,
 
   #[serde(flatten)]
   pub log: Log
@@ -79,7 +82,7 @@ pub struct SentioEventTrace {
 #[serde(rename_all = "camelCase")]
 pub struct SentioCallTrace {
   #[serde(flatten)]
-  pub base: BaseSentioTrace,
+  pub base: SentioBaseTrace,
   pub traces: Vec<SentioTrace>,
   pub from: H160,
   #[serde(serialize_with = "bytes_0x_serialize")]
@@ -92,17 +95,19 @@ pub struct SentioCallTrace {
   pub value: U256,
 
   // for internal trace
-  pub input_stack: Vec<U256>,
-  pub input_memory: Vec<String>,
-  pub output_stack: Vec<U256>,
-  pub output_memory: Vec<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub name: Option<String>,
+  pub input_stack: Vec<H256>,
+  pub input_memory: Option<Vec<H256>>,
+  pub output_stack: Vec<H256>,
+  pub output_memory: Option<Vec<H256>>,
   pub function_pc: u64,
   #[serde(skip)]
   #[codec(skip)]
   pub exit_pc: u64,
   #[codec(skip)]
   #[serde(skip)]
-  pub function: Option<*const sentio::FunctionInfo>
+  pub function: Option<FunctionInfo>
 }
 //
 // #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
