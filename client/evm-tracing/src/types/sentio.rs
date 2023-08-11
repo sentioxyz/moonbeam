@@ -5,7 +5,7 @@ use ethereum::Log;
 use parity_scale_codec::{Decode, Encode};
 use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Eq, PartialEq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentioTracerConfig {
   #[serde(default)]

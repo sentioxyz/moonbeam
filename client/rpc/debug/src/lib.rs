@@ -251,9 +251,9 @@ where
 					} else if tracer == "callTracer" {
 						Some(TracerInput::CallTracer)
 					} else if tracer == "sentioTracer" {
-						let config = tracerConfig.unwrap_or_default();
+						// let config = tracerConfig.unwrap_or(serde_json::Value::from("{}"));
 						// TODO find a better way to pass config instead of serialize to string
-						return Ok((TracerInput::None, single::TraceType::SentioCallList { tracerConfig: config.to_string() }))
+						return Ok((TracerInput::None, single::TraceType::SentioCallList { tracerConfig: tracerConfig.map(|x| x.to_string()) }))
 					} else {
 						None
 					};
@@ -566,7 +566,10 @@ where
 						))
 					}
 					single::TraceType::SentioCallList{tracerConfig} => {
-						let config: sentio::SentioTracerConfig = serde_json::from_str(&tracerConfig)?;
+						let config: sentio::SentioTracerConfig = tracerConfig.map(|x| {
+							let v: sentio::SentioTracerConfig = serde_json::from_str(&x).unwrap();
+							v
+						}).unwrap_or(sentio::SentioTracerConfig::default());
 						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioCallList::new(config);
 						proxy.using(f)?;
 						proxy.finish_transaction();
