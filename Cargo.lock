@@ -5590,7 +5590,6 @@ dependencies = [
 name = "moonbeam-client-evm-tracing"
 version = "0.1.0"
 dependencies = [
- "ethereum",
  "ethereum-types",
  "evm-tracing-events",
  "hex",

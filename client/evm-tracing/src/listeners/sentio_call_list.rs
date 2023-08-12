@@ -18,8 +18,6 @@ use crate::types::{ContextType, sentio};
 use ethereum_types::{H160, H256, U256};
 use evm_tracing_events::{runtime::{Capture, ExitError, ExitReason, ExitSucceed}, Event, EvmEvent, GasometerEvent, Listener as ListenerT, RuntimeEvent, StepEventFilter, evm};
 use std::{collections::HashMap, vec, vec::Vec, str::FromStr};
-use std::ops::Deref;
-use ethereum::Log;
 use log::{error, log, warn};
 use evm_tracing_events::runtime::{Memory, Opcode, opcodes_string, Stack};
 use crate::types::sentio::{SentioBaseTrace, FunctionInfo, SentioCallTrace, SentioEventTrace, SentioTrace};
@@ -42,6 +40,7 @@ struct Context {
 	address: H160,
 	code_address: Option<H160>,
 	current_step: Option<Step>,
+	gas_used: u64,
 	// global_storage_changes: BTreeMap<H160, BTreeMap<H256, H256>>,
 }
 
@@ -55,14 +54,12 @@ struct Step {
 	gas: u64,
 	/// Gas cost of the following opcode.
 	gas_cost: u64,
-	/// Gas used
-	gas_used: u64,
 	/// Program counter position.
 	pc: u64,
 
 	memory: Memory,
 	/// EVM stack copy (if not disabled).
-	stack:  Stack,
+	stack: Stack,
 }
 
 pub struct Listener {
@@ -99,7 +96,7 @@ pub struct Listener {
 impl Listener {
 	pub fn new(config: sentio::SentioTracerConfig) -> Self {
 		let mut function_map: HashMap<H160, HashMap<u64, FunctionInfo>> = Default::default();
-		let mut call_map: HashMap<H160, HashMap<u64, bool>> =  Default::default();
+		let mut call_map: HashMap<H160, HashMap<u64, bool>> = Default::default();
 
 		for (address_string, functions) in &config.functions {
 			let address = H160::from_str(&address_string).unwrap();
@@ -161,7 +158,6 @@ impl Listener {
 	// Finish
 
 	pub fn finish_transaction(&mut self) {
-		// self.new_context = false;
 		self.context_stack = vec![];
 
 		// make sure callstack only have one element and move element into self.result
@@ -169,12 +165,16 @@ impl Listener {
 			log::error!("call stack size is not 1, {}", self.call_stack.len());
 			if self.call_stack.is_empty() {
 				// TODO should stop
-				return
+				return;
 			}
 		}
 
 		let mut root = self.call_stack.remove(0);
 		self.call_stack.clear();
+
+		if root.base.start_index == -1 {
+			root.base.start_index = 0;
+		}
 
 		if self.tracer_config.debug {
 			root.base.tracer_config = Some(serde_json::to_string(&self.tracer_config).unwrap_or_default());
@@ -185,7 +185,7 @@ impl Listener {
 	// almost identical to raw
 	pub fn gasometer_event(&mut self, event: GasometerEvent) {
 		match event {
-			GasometerEvent::RecordTransaction { cost, .. } => {
+			GasometerEvent::RecordTransaction { cost, snapshot } => {
 				// First event of a transaction.
 				// Next step will be the first context.
 				// self.new_context = true;
@@ -197,8 +197,8 @@ impl Listener {
 					if let Some(step) = &mut context.current_step {
 						step.gas = snapshot.gas();
 						step.gas_cost = cost;
-						step.gas_used = snapshot.used_gas;
 					}
+					context.gas_used = snapshot.used_gas + cost;
 					// self.final_gas = snapshot.used_gas;
 				}
 			}
@@ -210,8 +210,8 @@ impl Listener {
 					if let Some(step) = &mut context.current_step {
 						step.gas = snapshot.gas();
 						step.gas_cost = gas_cost;
-						step.gas_used = snapshot.used_gas;
 					}
+					context.gas_used = snapshot.used_gas + gas_cost
 					// self.final_gas = snapshot.used_gas;
 				}
 			}
@@ -227,11 +227,12 @@ impl Listener {
 				let op = to_opcode(&opcode);
 				match op {
 					Opcode::CREATE | Opcode::CREATE2 | Opcode::CALL | Opcode::CALLCODE | Opcode::DELEGATECALL | Opcode::STATICCALL | Opcode::SUICIDE => {
-							self.context_stack.push(Context {
-								address: context.address,
-								code_address: None,
-								current_step: None,
-							});
+						self.context_stack.push(Context {
+							address: context.address,
+							code_address: None,
+							current_step: None,
+							gas_used: 0,
+						});
 					}
 					_ => ()
 				}
@@ -245,7 +246,6 @@ impl Listener {
 						depth,
 						gas: 0,      // 0 for now, will add with gas events (for all)
 						gas_cost: 0,
-						gas_used: 0,
 						pc: *position.as_ref().unwrap_or(&0),
 						// TODO check if this safe or cost too much?
 						memory: memory.expect("memory data to not be filtered out"),
@@ -254,8 +254,6 @@ impl Listener {
 				}
 			}
 			RuntimeEvent::StepResult { result, return_value } => {
-				let mut step_gas_used = 0;
-
 				// StepResult is expected to be emited after a step (in a context).
 				// Only case StepResult will occur without a Step before is in a transfer
 				// transaction to a non-contract address. However it will not contain any
@@ -270,13 +268,10 @@ impl Listener {
 								depth,
 								gas,
 								gas_cost,
-								gas_used,
 								pc,
 								memory,
 								stack,
 							} = current_step;
-
-							step_gas_used = gas_used; // TODO check if we need add 1
 
 							self.index = self.index + 1;
 							let op = to_opcode(&opcode);
@@ -309,7 +304,7 @@ impl Listener {
 										_ => vec![]
 									};
 									res
-								},
+								}
 								_ => vec![],
 							};
 
@@ -331,7 +326,7 @@ impl Listener {
 
 									let log_trace = SentioEventTrace {
 										base: base_trace,
-										log: Log {
+										log: sentio::Log {
 											address: code_address,
 											topics,
 											data,
@@ -366,7 +361,7 @@ impl Listener {
 											};
 
 											if function_info.address != code_address {
-												break
+												break;
 											}
 
 											// find a match
@@ -425,7 +420,7 @@ impl Listener {
 								Opcode::REVERT if self.tracer_config.with_internal_calls => {
 									let log_offset = stack_back(&stack, 0).to_low_u64_be() as usize;
 									let log_size = stack_back(&stack, 1).to_low_u64_be() as usize;
-									let output = &memory.data[log_offset..(log_offset +log_size)];
+									let output = &memory.data[log_offset..(log_offset + log_size)];
 
 									base_trace.error = b"execution reverted".to_vec();
 									// TDDO p2 Upack output and set revert_reason
@@ -440,7 +435,7 @@ impl Listener {
 							}
 						}
 					}
-					break
+					break;
 				} // outer loop
 
 				// We match on the capture to handle traps/exits.
@@ -450,25 +445,22 @@ impl Listener {
 						if let Some(mut context) = self.context_stack.pop() {
 							for i in (0..stack_size).rev() {
 								if self.call_stack[i].function.is_some() {
-									continue
+									continue;
 								}
 
-								if stack_size-i > 1 {
+								if stack_size - i > 1 {
 									log::info!("tail call optimization [external] size {}", stack_size - i);
 								}
 
 								let mut call = self.call_stack.get_mut(i).expect("call should exist");
 								call.base.end_index = self.index;
-								if step_gas_used == 0 {
-									log::error!("step gas used zero");
-								}
-								call.base.gas_used = step_gas_used;
+								call.base.gas_used = context.gas_used;
+								;
 								// TODO P1 process error
 
-								let current_gas = call.base.gas - step_gas_used;
-
-								self.pop_stack(i, &return_value, current_gas);
-								return
+								let gas = call.base.gas - context.gas_used;
+								self.pop_stack(i, &return_value, gas);
+								return;
 							}
 
 							// If final context is exited, we store gas and return value.
@@ -527,12 +519,13 @@ impl Listener {
 			address: to,
 			code_address: None,
 			current_step: None,
+			gas_used: 0,
 		});
 	}
 
 	pub fn evm_event(&mut self, event: EvmEvent) {
 		match event {
-			EvmEvent::TransactCall { caller, address, value, data, gas_limit} => {
+			EvmEvent::TransactCall { caller, address, value, data, gas_limit } => {
 				self.create_root_trace(caller, address, Opcode::CALL, value, data, gas_limit);
 			}
 
@@ -557,9 +550,10 @@ impl Listener {
 					context.code_address = Some(code_address);
 				}
 			}
-			EvmEvent::Create { caller, address, scheme, value, init_code, target_gas } =>{
+			EvmEvent::Create { caller, address, scheme, value, init_code, target_gas } => {
 				if self.call_stack.len() > 1 {
-					let mut call = self.call_stack.last_mut().expect("not none");;
+					let mut call = self.call_stack.last_mut().expect("not none");
+					;
 					if call.function != None {
 						panic!("find internal call when setting external call trace")
 					}
@@ -573,10 +567,19 @@ impl Listener {
 				// no extra information to add
 			}
 			EvmEvent::Exit { reason, return_value } => {
-				// already captured StepResult
-
+				// others except the root call has already captured StepResult
 				if self.context_stack.len() == 1 {
+					let context = self.context_stack.last().expect("should have root context");
+					let call = self.call_stack.get_mut(0).expect("should has root element");
 
+					call.base.end_index = self.index;
+					call.base.gas_used = context.gas_used;
+					call.output = return_value.clone();
+					// TODO P1 process error
+
+					let last = self.call_stack.last().expect("should have one");
+					let gas_left = last.base.gas - context.gas_used;
+					self.pop_stack(1, &return_value, gas_left);
 				}
 			}
 		}
@@ -629,8 +632,8 @@ fn error_message(error: &ExitError) -> Vec<u8> {
 		ExitError::Other(err) => err,
 		_ => "unexpected error",
 	}
-	.as_bytes()
-	.to_vec()
+		.as_bytes()
+		.to_vec()
 }
 
 impl ListenerT for Listener {
@@ -660,16 +663,16 @@ impl ListenerT for Listener {
 }
 
 fn stack_back(stack: &Stack, n: u64) -> &H256 {
-	return stack.data.get(stack.data.len() - (n as usize) - 1).expect("stack shouldn't be empty")
+	return stack.data.get(stack.data.len() - (n as usize) - 1).expect("stack shouldn't be empty");
 }
 
 fn copy_stack(stack: &Stack, copy_size: usize) -> Vec<H256> {
-	let stack_size= stack.data.len();
+	let stack_size = stack.data.len();
 	let mut res: Vec<H256> = Vec::with_capacity(stack_size);
-	for i in (stack_size-copy_size)..stack_size {
+	for i in (stack_size - copy_size)..stack_size {
 		res[i] = stack.data[i]
 	}
-	return res
+	return res;
 }
 
 fn copy_memory(memory: &Memory, offset: usize, size: usize) -> Vec<u8> {
@@ -678,19 +681,19 @@ fn copy_memory(memory: &Memory, offset: usize, size: usize) -> Vec<u8> {
 		if memory.data.len() > end {
 			end = memory.data.len()
 		}
-		return Vec::from_iter(memory.data[offset..end].iter().cloned())
+		return Vec::from_iter(memory.data[offset..end].iter().cloned());
 	}
-	return Vec::default()
+	return Vec::default();
 }
 
 fn format_memory(memory: &Memory) -> Vec<H256> {
 	let data = &memory.data;
-	let mut res: Vec<H256> = Vec::with_capacity((data.len()+31)/32);
+	let mut res: Vec<H256> = Vec::with_capacity((data.len() + 31) / 32);
 
-	for i in (0..=(data.len()-32)).step_by(32) {
-		res.push(H256::from_slice(&data[i..i+32]))
+	for i in (0..=(data.len() - 32)).step_by(32) {
+		res.push(H256::from_slice(&data[i..i + 32]))
 	}
-	return res
+	return res;
 }
 
 pub fn to_opcode(opcode: &Vec<u8>) -> Opcode {
@@ -799,7 +802,7 @@ pub fn to_opcode(opcode: &Vec<u8>) -> Opcode {
 		"Dup7" => Opcode(134),
 		"Dup8" => Opcode(135),
 		"Dup9" => Opcode(136),
-		"Dup10" => 	Opcode(137),
+		"Dup10" => Opcode(137),
 		"Dup11" => Opcode(138),
 		"Dup12" => Opcode(139),
 		"Dup13" => Opcode(140),
@@ -824,7 +827,7 @@ pub fn to_opcode(opcode: &Vec<u8>) -> Opcode {
 		"Swap16" => Opcode(159),
 		"Log0" => Opcode(160),
 		"Log1" => Opcode(161),
-		"Log2" => 	Opcode(162),
+		"Log2" => Opcode(162),
 		"Log3" => Opcode(163),
 		"Log4" => Opcode(164),
 		"JumpTo" => Opcode(176),
@@ -852,6 +855,5 @@ pub fn to_opcode(opcode: &Vec<u8>) -> Opcode {
 		"SelfDestruct" => Opcode(255),
 		_ => Opcode(0)
 	};
-	return out
+	return out;
 }
-
