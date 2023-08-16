@@ -139,14 +139,8 @@ impl Listener {
 			context_stack: vec![],
 			call_list_first_transaction: false,
 			version: TracingVersion::Legacy,
-			precompile_address: vec![
-				1, 2, 3, 4, 5, 6, 7, 8, 9, 1024, 1025, 1026, 2048, 2049, 2050, 2051, 2052, 2053, 2054,
-				2055, 2056, 2057, 2058, 2059, 2060, 2061, 2062, 2063, 2064, 2065, 2066, 2067, 2068,
-				2069, 2070,
-			]
-				.into_iter()
-				.map(H160::from_low_u64_be)
-				.collect()
+			// https://docs.moonbeam.network/builders/pallets-precompiles/precompiles/overview/
+			precompile_address:  (1..=4095).into_iter().map(H160::from_low_u64_be).collect()
 		}
 	}
 }
