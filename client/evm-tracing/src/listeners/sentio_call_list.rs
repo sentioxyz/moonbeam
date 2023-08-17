@@ -37,6 +37,7 @@ use evm_tracing_events::{runtime::{Capture, ExitError, ExitReason}, Event, EvmEv
 use std::{collections::HashMap, vec, vec::Vec, str::FromStr};
 use evm_tracing_events::runtime::{Memory, Opcode, Stack};
 use crate::types::sentio::{SentioBaseTrace, FunctionInfo, SentioCallTrace, SentioEventTrace, SentioTrace};
+use sha3::{Digest, Keccak256};
 
 /// Enum of the different "modes" of tracer for multiple runtime versions and
 /// the kind of EVM events that are emitted.
@@ -190,7 +191,8 @@ impl Listener {
 	pub fn gasometer_event(&mut self, event: GasometerEvent) {
 		match event {
 			GasometerEvent::RecordCost { cost, snapshot }
-			| GasometerEvent::RecordDynamicCost { gas_cost: cost, snapshot, ..
+			| GasometerEvent::RecordDynamicCost {
+				gas_cost: cost, snapshot, ..
 			} => {
 				let is_root = self.context_stack.len() == 1;
 				if let Some(context) = self.context_stack.last_mut() {
@@ -779,12 +781,67 @@ pub fn format_memory(memory: &Vec<u8>) -> Vec<H256> {
 		.collect()
 }
 
+// UnpackRevert resolves the abi-encoded revert reason. According to the solidity
+// spec https://solidity.readthedocs.io/en/latest/control-structures.html#revert,
+// the provided revert reason is abi-encoded as if it were a call to a function
+// `Error(string)`. So it's a special tool for it.
 pub fn unpack_revert(output: &[u8]) -> Option<Vec<u8>> {
-	// TODO p2 unpack error message
 	if output.len() < 4 {
-		return None
+		return None;
 	}
-	return None
+	let revert_selector = &Keccak256::digest("Error(string)")[0..4];
+	if output[0..4] != *revert_selector {
+		return None;
+	}
+	let data = &output[4..];
+	if let Some((start, length)) = length_prefix_points_to(0, data) {
+		let bytes = data[start..start + length].to_vec();
+		// let reason = std::str::from_utf8(&bytes).unwrap();
+		return Some(bytes);
+	}
+	return None;
+}
+
+fn length_prefix_points_to(index: usize, output: &[u8]) -> Option<(usize, usize)> {
+	let mut big_offset_end = U256::from(&output[index..index + 32]);
+	big_offset_end = big_offset_end + U256::from(32);
+	let output_length = U256::from(output.len());
+
+	if big_offset_end > output_length {
+		log::error!("abi: cannot marshal in to go slice: offset {} would go over slice boundary (len={})", big_offset_end, output_length);
+		return None;
+	}
+
+	if big_offset_end.bits() > 63 {
+		log::error!("abi offset larger than int64: {}", big_offset_end);
+		return None;
+	}
+
+	let offset_end = big_offset_end.as_u64() as usize;
+	let length_big = U256::from(&output[offset_end - 32..offset_end]);
+
+	let total_size = big_offset_end + length_big;
+	if total_size.bits() > 63 {
+		log::error!("abi: length larger than int64: {}", total_size);
+		return None;
+	}
+
+	if total_size > output_length {
+		log::error!("abi: cannot marshal in to go type: length insufficient {} require {}", output_length, total_size);
+		return None;
+	}
+
+	let start = big_offset_end.as_u64() as usize;
+	let length = length_big.as_u64() as usize;
+	return Some((start, length));
+}
+
+#[test]
+fn test_unpack_revert() {
+	let output_hex = "08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000002f416e7973776170563345524332303a207472616e7366657220616d6f756e7420657863656564732062616c616e63650000000000000000000000000000000000";
+	assert_eq!(unpack_revert(&hex::decode(output_hex).unwrap()), Some(b"AnyswapV3ERC20: transfer amount exceeds balance".to_vec()));
+	assert_eq!(unpack_revert(&hex::decode("08c379a1").unwrap()), None);
+	assert_eq!(unpack_revert(&hex::decode("").unwrap()), None);
 }
 
 pub fn to_opcode(opcode: &Vec<u8>) -> Opcode {
