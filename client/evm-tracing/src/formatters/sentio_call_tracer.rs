@@ -24,7 +24,7 @@ impl super::ResponseFormatter for Formatter {
 	type Listener = Listener;
 	type Response = Vec<TransactionTrace>;
 
-	fn format(mut listener: Listener) -> Option<Vec<TransactionTrace>> {
+	fn format(listener: Listener) -> Option<Vec<TransactionTrace>> {
 		if listener.results.is_empty() {
 			None
 		} else {
