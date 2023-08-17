@@ -34,9 +34,8 @@
 use crate::types::sentio;
 use ethereum_types::{H160, H256, U256};
 use evm_tracing_events::{runtime::{Capture, ExitError, ExitReason}, Event, EvmEvent, GasometerEvent, Listener as ListenerT, RuntimeEvent, StepEventFilter};
-use std::{collections::{HashMap, HashSet}, vec, vec::Vec, str::FromStr};
-use log::log;
-use evm_tracing_events::runtime::{Memory, Opcode, opcodes_string, Stack};
+use std::{collections::HashMap, vec, vec::Vec, str::FromStr};
+use evm_tracing_events::runtime::{Memory, Opcode, Stack};
 use crate::types::sentio::{SentioBaseTrace, FunctionInfo, SentioCallTrace, SentioEventTrace, SentioTrace};
 
 /// Enum of the different "modes" of tracer for multiple runtime versions and
@@ -57,18 +56,23 @@ struct Context {
 	address: H160,
 	code_address: Option<H160>,
 	current_step: Option<Step>,
-	current_opcode: Option<String>, // Mostly for debugg
+	current_opcode: Option<String>,
+	// Only for debug
 	gas: u64,
 	start_gas: u64,
 	// global_storage_changes: BTreeMap<H160, BTreeMap<H256, H256>>,
+}
+
+impl Context {
+	fn used_gas(&self) -> u64 {
+		self.start_gas - self.gas
+	}
 }
 
 #[derive(Debug, Clone)]
 struct Step {
 	/// Current opcode.
 	opcode: Vec<u8>,
-	/// Depth of the context.
-	depth: usize,
 	/// Gas cost of the following opcode.
 	gas_cost: u64,
 	/// Program counter position.
@@ -84,18 +88,18 @@ pub struct Listener {
 	tracer_config: sentio::SentioTracerConfig,
 	function_map: HashMap<H160, HashMap<u64, sentio::FunctionInfo>>,
 	call_map: HashMap<H160, HashMap<u64, bool>>,
+	entry_pc: HashMap<u64, bool>,
 
 	previous_jump: Option<SentioCallTrace>,
 	index: i32,
-	entry_pc: HashMap<u64, bool>,
 
-	call_stack: Vec<SentioCallTrace>, // can only be call trace or internal trace
+	call_stack: Vec<SentioCallTrace>,
+	// can only be call trace or internal trace
 	context_stack: Vec<Context>,
 
 	call_list_first_transaction: bool,
 
-	precompile_address: HashSet<H160>,
-
+	// precompile_address: HashSet<H160>,
 	/// Version of the tracing. Not sure if we need in our tracer
 	/// Defaults to legacy, and switch to a more modern version if recently added events are
 	/// received.
@@ -140,7 +144,7 @@ impl Listener {
 			call_list_first_transaction: false,
 			version: TracingVersion::Legacy,
 			// https://docs.moonbeam.network/builders/pallets-precompiles/precompiles/overview/
-			precompile_address:  (1..=4095).into_iter().map(H160::from_low_u64_be).collect()
+			// precompile_address:  (1..=4095).into_iter().map(H160::from_low_u64_be).collect()
 		}
 	}
 }
@@ -153,24 +157,21 @@ impl Listener {
 	pub fn finish_transaction(&mut self) {
 		self.context_stack = vec![];
 
-		match  self.version {
+		match self.version {
 			TracingVersion::Legacy => {
 				log::error!("legacy mode is not handle well");
 			}
 			_ => {}
 		}
 
-		// make sure callstack only have one element and move element into self.result
 		if self.call_stack.len() != 1 {
-			log::error!("call stack size is not 1, {}", self.call_stack.len());
-			if self.call_stack.is_empty() {
-				// TODO should stop
-				return;
-			}
+			panic!("call stack size is not 1, {}", self.call_stack.len());
+		}
+		if self.context_stack.len() != 0 {
+			panic!("context stack size is not 0 {}", self.context_stack.len());
 		}
 
 		let mut root = self.call_stack.remove(0);
-		self.call_stack.clear();
 
 		if root.base.start_index == -1 {
 			root.base.start_index = 0;
@@ -180,19 +181,17 @@ impl Listener {
 			root.base.tracer_config = Some(serde_json::to_string(&self.tracer_config).unwrap_or_default());
 		}
 		self.results.push(root);
+
+		self.index = 0;
+		self.previous_jump = None;
 	}
 
 	// almost identical to raw
 	pub fn gasometer_event(&mut self, event: GasometerEvent) {
 		match event {
-			// GasometerEvent::RecordStipend
-			GasometerEvent::RecordTransaction { cost, snapshot } => {
-				// if let Some(call) = self.call_stack.last_mut() {
-				// 	call.base.gas_used = cost;
-				// }
-			}
-			GasometerEvent::RecordCost { cost, snapshot } | GasometerEvent::RecordDynamicCost {
-				gas_cost: cost, snapshot, .. } => {
+			GasometerEvent::RecordCost { cost, snapshot }
+			| GasometerEvent::RecordDynamicCost { gas_cost: cost, snapshot, ..
+			} => {
 				let is_root = self.context_stack.len() == 1;
 				if let Some(context) = self.context_stack.last_mut() {
 					// Register opcode cost. (ignore costs not between Step and StepResult)
@@ -208,6 +207,19 @@ impl Listener {
 					context.gas = snapshot.gas();
 				}
 			}
+			// TODO check why using this break result
+			// GasometerEvent::RecordStipend { stipend, snapshot } => {
+			// 	if let Some(context) = self.context_stack.last_mut() {
+			// 		let gas = snapshot.gas();
+			// 		log::warn!("stipend {}, {} found, not battle tested", stipend, gas);
+			// 		context.gas = gas;
+			// 	}
+			// }
+			// GasometerEvent::RecordTransaction { cost, snapshot } => {
+			// 	if let Some(call) = self.call_stack.last_mut() {
+			// 		call.base.gas_used = cost;
+			// 	}
+			// }
 			// We ignore other kinds of message if any (new ones may be added in the future).
 			#[allow(unreachable_patterns)]
 			_ => (),
@@ -232,13 +244,10 @@ impl Listener {
 					_ => ()
 				}
 
-				let depth = self.context_stack.len();
-
 				// Ignore steps outside of any context (shouldn't even be possible).
 				if let Some(context) = self.context_stack.last_mut() {
 					context.current_step = Some(Step {
 						opcode,
-						depth,
 						gas_cost: 0,  // 0 for now, will add with gas events (for all)
 						pc: *position.as_ref().unwrap_or(&0),
 						// TODO check if this safe or cost too much?
@@ -247,7 +256,7 @@ impl Listener {
 					});
 				}
 			}
-			RuntimeEvent::StepResult { result, return_value } => {
+			RuntimeEvent::StepResult { result, return_value: _ } => {
 				// StepResult is expected to be emited after a step (in a context).
 				// Only case StepResult will occur without a Step before is in a transfer
 				// transaction to a non-contract address. However it will not contain any
@@ -259,7 +268,6 @@ impl Listener {
 						if let Some(current_step) = context.current_step.take() {
 							let Step {
 								opcode,
-								depth,
 								gas_cost,
 								pc,
 								memory,
@@ -283,30 +291,29 @@ impl Listener {
 								pc,
 								start_index: self.index - 1,
 								end_index: self.index,
-								op: opcodes_string(op),
+								op,
 								gas: context.gas,
 								gas_used: gas_cost,
-								error: vec![],
-								revert_reason: vec![],
+								error: None,
+								revert_reason: None,
 							};
 
 							base_trace.error = match &result {
 								Err(Capture::Exit(reason)) => {
 									let res = match &reason {
-										ExitReason::Error(error) => error_message(error),
-										ExitReason::Revert(_) => b"execution reverted".to_vec(),
-										ExitReason::Fatal(fatal) => b"fatal exit".to_vec(), // TODO better message
-										_ => vec![]
+										ExitReason::Error(error) => Some(error_message(error)),
+										ExitReason::Revert(_) => Some(b"execution reverted".to_vec()),
+										ExitReason::Fatal(_) => Some(vec![]),
+										_ => None
 									};
 									res
 								}
-								_ => vec![],
+								_ => None,
 							};
 
 							match op {
 								Opcode::CREATE | Opcode::CREATE2 | Opcode::CALL | Opcode::CALLCODE | Opcode::DELEGATECALL | Opcode::STATICCALL | Opcode::SUICIDE => {
-									let mut call_trace: SentioCallTrace = SentioCallTrace::default();
-									call_trace.base = base_trace;
+									let call_trace: SentioCallTrace = SentioCallTrace::new(base_trace);
 									self.call_stack.push(call_trace)
 								}
 								Opcode::LOG0 | Opcode::LOG1 | Opcode::LOG2 | Opcode::LOG3 | Opcode::LOG4 => {
@@ -331,8 +338,7 @@ impl Listener {
 									last.traces.push(SentioTrace::EventTrace(log_trace))
 								}
 								Opcode::JUMP if self.tracer_config.with_internal_calls => {
-									let mut jump = SentioCallTrace::default();
-									jump.base = base_trace;
+									let mut jump = SentioCallTrace::new(base_trace);
 									jump.from = code_address;
 
 									if self.previous_jump.is_some() {
@@ -369,15 +375,19 @@ impl Listener {
 												for j in (i..stack_size).rev() {
 													let mut element = self.call_stack.pop().expect("stack should have element");
 
-													let function_info_j = element.function.as_ref().expect("function should existed");
+													let function_j = element.function.as_ref().expect("function should existed");
 
 													element.base.end_index = self.index - 1;
 													element.base.gas_used = element.base.gas - context.gas;
-													element.output_stack = copy_stack(&stack, function_info_j.output_size as usize);
-													if function_info_j.output_memory {
-														element.output_memory = Some(format_memory(&memory));
+													if function_j.output_size as usize > stack.data.len() {
+														log::error!("stack size not enough ({} vs {}) for function {} {}. pc: {}",
+														stack.data.len(), function_j.output_size, function_j.address, function_j.name, pc)
+													} else {
+														element.output_stack = copy_stack(&stack, function_j.output_size as usize);
 													}
-													// TODO P1 err
+													if function_j.output_memory {
+														element.output_memory = Some(format_memory(&memory.data));
+													}
 
 													self.call_stack[j - 1].traces.push(SentioTrace::CallTrace(element));
 												}
@@ -406,7 +416,7 @@ impl Listener {
 												previous_jump.name = Some(function_info.name.clone());
 											}
 											if function_info.input_memory {
-												previous_jump.input_memory = Some(format_memory(&memory))
+												previous_jump.input_memory = Some(format_memory(&memory.data))
 											}
 											self.call_stack.push(previous_jump)
 										}
@@ -417,11 +427,11 @@ impl Listener {
 									let log_size = stack_back(&stack, 1).to_low_u64_be() as usize;
 									let output = &memory.data[log_offset..(log_offset + log_size)];
 
-									base_trace.error = b"execution reverted".to_vec();
-									// TDDO p2 Upack output and set revert_reason
+									base_trace.error = Some(b"execution reverted".to_vec());
+									base_trace.revert_reason = unpack_revert(&output)
 								}
 								_ if self.tracer_config.with_internal_calls => {
-									if !base_trace.error.is_empty() {
+									if base_trace.error.is_some() {
 										let last = self.call_stack.last_mut().expect("call stack should not be empty");
 										last.traces.push(SentioTrace::OtherTrace(base_trace))
 									}
@@ -433,55 +443,52 @@ impl Listener {
 					break;
 				} // outer loop
 
-				// We match on the capture to handle traps/exits.
-				match result {
-					Err(Capture::Exit(reason)) => { // OP could be return & STOP & CALL (immediate revert)
-						if let Some(context) = self.context_stack.pop() {
-							let stack_size = self.call_stack.len();
-							for i in (0..stack_size).rev() {
-								if self.call_stack[i].function.is_some() {
-									continue;
-								}
-
-								if stack_size - i > 1 {
-									log::info!("tail call optimization [external] size {}", stack_size - i);
-								}
-
-								let mut call = self.call_stack.get_mut(i).expect("call should exist");
-								call.base.end_index = self.index;
-								call.base.gas_used = context.start_gas - context.gas;
-
-								// TODO P1 process error
-
-								// let gas = call.base.gas - context.gas_used;
-								self.pop_stack(i, &return_value, context.gas);
-								return;
-							}
-						}
-					}
-					_ => (),
-				} // match result
+				// TODO update storage if needed
+				// // We match on the capture to handle traps/exits.
+				// match result {
+				// 	Err(Capture::Exit(reason)) => { // OP could be return & STOP & CALL (immediate revert) & any (oos)
+				// 		if let Some(context) = self.context_stack.pop() {
+				// 			let stack_size = self.call_stack.len();
+				// 			for i in (0..stack_size).rev() {
+				// 				if self.call_stack[i].function.is_some() {
+				// 					continue;
+				// 				}
+				//
+				// 				if stack_size - i > 1 {
+				// 					log::info!("tail call optimization [external] size {}", stack_size - i);
+				// 				}
+				//
+				// 				let mut call = self.call_stack.get_mut(i).expect("call should exist");
+				// 				call.process_error(&return_value, &reason);
+				// 				// let gas = call.base.gas - context.gas_used;
+				// 				self.pop_stack(i, &return_value, context.gas);
+				// 				return;
+				// 			}
+				// 		}
+				// 	}
+				// 	_ => (),
+				// } // match result
 			}
 			_ => {}
 		}
 	}
 
-	fn create_root_trace(&mut self, from: H160, to: H160, op: Opcode, value: U256, data: Vec<u8>, gas_limit: u64) {
+	fn create_root_trace(&mut self, from: H160, to: H160, op: Opcode, value: U256, data: Vec<u8>) {
 		let base_trace = SentioBaseTrace {
 			tracer_config: None,
-			op: opcodes_string(op),
+			op,
 			start_index: -1,
 			gas: 0,
 			pc: 0,
 			end_index: 0,
 			gas_used: 0,
-			error: vec![],
-			revert_reason: vec![],
+			error: None,
+			revert_reason: None,
 		};
 		let call = SentioCallTrace {
 			base: base_trace,
 			from,
-			to,
+			to: Some(to),
 			input: data,
 			value,
 
@@ -509,21 +516,20 @@ impl Listener {
 		});
 	}
 
-	fn patch_call_trace(&mut self, 		code_address: H160, transfer: Option<evm_tracing_events::evm::Transfer>,
-													input: Vec<u8>,
-													target_gas: Option<u64>,
-													context: evm_tracing_events::Context) {
+	fn patch_call_trace(&mut self, code_address: H160, transfer: Option<evm_tracing_events::evm::Transfer>,
+											input: Vec<u8>,
+											context: evm_tracing_events::Context) {
 		let value = transfer.map(|t| t.value).unwrap_or_default();
 		if self.call_stack.is_empty() {
 			// Legacy mode
-			self.create_root_trace(context.caller, context.address, Opcode::CALL, value, input, target_gas.unwrap_or_default());
+			self.create_root_trace(context.caller, context.address, Opcode::CALL, value, input);
 		} else if self.call_stack.len() > 1 { // the first Call will happen after TransactCall and it's
 			let mut call = self.call_stack.last_mut().expect("not none");
 			if call.function != None {
 				panic!("find internal call when setting external call trace")
 			}
 			call.from = context.caller;
-			call.to = context.address;
+			call.to = Some(context.address);
 			call.input = input;
 			call.value = value;
 
@@ -534,26 +540,26 @@ impl Listener {
 
 	pub fn evm_event(&mut self, event: EvmEvent) {
 		match event {
-			EvmEvent::TransactCall { caller, address, value, data, gas_limit } => {
+			EvmEvent::TransactCall { caller, address, value, data, .. } => {
 				self.version = TracingVersion::EarlyTransact;
-				self.create_root_trace(caller, address, Opcode::CALL, value, data, gas_limit);
+				self.create_root_trace(caller, address, Opcode::CALL, value, data);
 			}
-			EvmEvent::TransactCreate { caller, value, init_code, gas_limit, address, }
-			| EvmEvent::TransactCreate2 { caller, value, init_code, gas_limit, address, .. } => {
+			EvmEvent::TransactCreate { caller, value, init_code, address, .. }
+			| EvmEvent::TransactCreate2 { caller, value, init_code, address, .. } => {
 				self.version = TracingVersion::EarlyTransact;
-				self.create_root_trace(caller, address, Opcode::CREATE, value, init_code, gas_limit);
+				self.create_root_trace(caller, address, Opcode::CREATE, value, init_code);
 			}
-			EvmEvent::Call { code_address, transfer, input, target_gas, is_static, context } => {
-				self.patch_call_trace(code_address, transfer, input, target_gas, context);
+			EvmEvent::Call { code_address, transfer, input, context, .. } => {
+				self.patch_call_trace(code_address, transfer, input, context);
 			}
-		 	EvmEvent::PrecompileSubcall { code_address, transfer, input, target_gas, is_static, context } => {
-				self.patch_call_trace(code_address, transfer, input, target_gas, context);
+			EvmEvent::PrecompileSubcall { code_address, transfer, input, context, .. } => {
+				self.patch_call_trace(code_address, transfer, input, context);
 				log::warn!("precompiled call found")
 			}
-			EvmEvent::Create { caller, address, scheme, value, init_code, target_gas } => {
+			EvmEvent::Create { caller, address, value, init_code, .. } => {
 				if self.call_stack.is_empty() {
 					// Legacy mode
-					self.create_root_trace(caller, address, Opcode::CREATE, value, init_code, target_gas.unwrap_or_default());
+					self.create_root_trace(caller, address, Opcode::CREATE, value, init_code);
 				} else if self.call_stack.len() > 1 {
 					let mut call = self.call_stack.last_mut().expect("not none");
 
@@ -561,31 +567,63 @@ impl Listener {
 						panic!("find internal call when setting external call trace")
 					}
 					call.from = caller;
-					call.to = address;
+					call.to = Some(address);
 					call.input = init_code;
 					call.value = value;
 				}
 			}
-			EvmEvent::Suicide { address, target, balance } => {
+			EvmEvent::Suicide { .. } => {
 				// no extra information to add
 			}
 			EvmEvent::Exit { reason, return_value } => {
-				// Only try to deal with precompile call here
-				// If it's precompile, since no exit SteoResult::event will be emitted, direct pop the stack
-				if let Some(context) = self.context_stack.last() {
-					if self.precompile_address.contains(&context.code_address.unwrap_or(H160::default())) {
-						let mut call = self.call_stack.pop().expect("not none");
-						call.output = return_value;
-						// TODO p1 handle exit reason
-						self.call_stack.last_mut().expect("last not none").traces.push(SentioTrace::CallTrace(call));
+				// We match on the capture to handle traps/exits.
+				// match result {
+				// 	Err(Capture::Exit(reason)) => { // OP could be return & STOP & CALL (immediate revert) & any (oos)
+				if let Some(context) = self.context_stack.pop() {
+					let used_gas = context.used_gas();
+					if let Some(previous_context) = self.context_stack.last_mut() {
+						// For early exit like OOS there no chance to update previous context
+						previous_context.gas -= used_gas;
+					}
+
+					let stack_size = self.call_stack.len();
+					for i in (0..stack_size).rev() {
+						if self.call_stack[i].function.is_some() {
+							continue;
+						}
+
+						if stack_size - i > 1 {
+							log::info!("tail call optimization [external] size {}", stack_size - i);
+						}
+
+						let call = self.call_stack.get_mut(i).expect("call should exist");
+						call.process_error(&return_value, &reason);
+						// let gas = call.base.gas - context.gas_used;
+						self.pop_stack(i, &return_value, context.start_gas - used_gas);
+						return;
 					}
 				}
 			}
+			// 	_ => (),
+			// } // match result
+
+			// Only try to deal with precompile call here
+			// If it's precompile, since no exit SteoResult::event will be emitted, direct pop the stack
+			// if let Some(context) = self.context_stack.last() {
+			// 	if self.precompile_address.contains(&context.code_address.unwrap_or(H160::default())) {
+			// 		let mut call = self.call_stack.pop().expect("not none");
+			// 		call.process_error(&return_value, &reason);
+			// 		call.output = return_value;
+			// 		self.call_stack.last_mut().expect("last not none").traces.push(SentioTrace::CallTrace(call));
+			// 	}
+			// }
+			// }
 		}
 	}
 
 	fn pop_stack(&mut self, to: usize, output: &Vec<u8>, gas_left: u64) {
-		for j in to..self.call_stack.len() {
+		let stack_size = self.call_stack.len();
+		for _ in to..stack_size {
 			let mut call = self.call_stack.pop().expect("not null");
 			call.output = output.clone();
 			call.base.end_index = self.index;
@@ -668,6 +706,34 @@ impl ListenerT for Listener {
 	}
 }
 
+impl SentioCallTrace {
+	fn process_error(&mut self, output: &Vec<u8>, reason: &ExitReason) {
+		let (error, revert_reason) = match reason {
+			ExitReason::Revert(_) => {
+				(Some(b"execution reverted".to_vec()), unpack_revert(output))
+			}
+			ExitReason::Fatal(_) => {
+				log::error!("unexpected fatal");
+				(Some(vec![]), None)
+			}
+			ExitReason::Error(error) => {
+				(Some(error_message(error)), None)
+			}
+			ExitReason::Succeed(_) => {
+				(None, None)
+			}
+		};
+		if error.is_none() {
+			return;
+		}
+		if self.base.op == Opcode::CREATE || self.base.op == Opcode::CREATE2 {
+			self.to = None;
+		}
+		self.base.error = error;
+		self.base.revert_reason = revert_reason;
+	}
+}
+
 fn stack_back(stack: &Stack, n: u64) -> &H256 {
 	return stack.data.get(stack.data.len() - (n as usize) - 1).expect("stack shouldn't be empty");
 }
@@ -692,14 +758,33 @@ fn copy_memory(memory: &Memory, offset: usize, size: usize) -> Vec<u8> {
 	return Vec::default();
 }
 
-fn format_memory(memory: &Memory) -> Vec<H256> {
-	let data = &memory.data;
-	let mut res: Vec<H256> = Vec::with_capacity((data.len() + 31) / 32);
+// copied from type but change memory to reference
+pub fn format_memory(memory: &Vec<u8>) -> Vec<H256> {
+	let size = 32;
+	memory
+		.chunks(size)
+		.map(|c| {
+			let mut msg = [0u8; 32];
+			let chunk = c.len();
+			if chunk < size {
+				let left = size - chunk;
+				let remainder = vec![0; left];
+				msg[0..left].copy_from_slice(&remainder[..]);
+				msg[left..size].copy_from_slice(c);
+			} else {
+				msg[0..size].copy_from_slice(c)
+			}
+			H256::from_slice(&msg[..])
+		})
+		.collect()
+}
 
-	for i in (0..=(data.len() - 32)).step_by(32) {
-		res.push(H256::from_slice(&data[i..i + 32]))
+pub fn unpack_revert(output: &[u8]) -> Option<Vec<u8>> {
+	// TODO p2 unpack error message
+	if output.len() < 4 {
+		return None
 	}
-	return res;
+	return None
 }
 
 pub fn to_opcode(opcode: &Vec<u8>) -> Opcode {

@@ -3,6 +3,7 @@ use crate::types::serialization::*;
 use ethereum_types::{H160, H256, U256};
 use parity_scale_codec::{Decode, Encode};
 use serde::{Serialize, Deserialize, Serializer};
+use evm_tracing_events::runtime::{Opcode, opcodes_string};
 
 #[derive(Clone, Eq, PartialEq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,15 +35,15 @@ pub struct FunctionInfo {
 	pub output_memory: bool,
 }
 
-#[derive(Clone, Eq, PartialEq, Default, Debug, Encode, Decode, Serialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentioBaseTrace {
 	// Only in debug mode, TODO p3, make it vec<u8> and have it serialize to json
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub tracer_config: Option<String>,
 
-	#[serde(rename = "type", serialize_with = "opcode_serialize")]
-	pub op: Vec<u8>,
+	#[serde(rename = "type", serialize_with = "original_opcode_serialize")]
+	pub op: Opcode,
 	pub pc: u64,
 	pub start_index: i32,
 	pub end_index: i32,
@@ -52,11 +53,17 @@ pub struct SentioBaseTrace {
 	#[serde(serialize_with = "u64_serialize")]
 	pub gas_used: u64,
 
-	#[serde(serialize_with = "string_serialize", skip_serializing_if = "Vec::is_empty")]
-	pub error: Vec<u8>,
+	#[serde(
+	skip_serializing_if = "Option::is_none",
+	serialize_with = "option_string_serialize"
+	)]
+	pub error: Option<Vec<u8>>,
 
-	#[serde(serialize_with = "string_serialize", skip_serializing_if = "Vec::is_empty")]
-	pub revert_reason: Vec<u8>,
+	#[serde(
+	skip_serializing_if = "Option::is_none",
+	serialize_with = "option_string_serialize"
+	)]
+	pub revert_reason: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
@@ -86,7 +93,7 @@ pub struct SentioEventTrace {
 	pub log: Log,
 }
 
-#[derive(Clone, Eq, PartialEq, Default, Debug, Encode, Decode, Serialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentioCallTrace {
 	#[serde(flatten)]
@@ -97,7 +104,8 @@ pub struct SentioCallTrace {
 	pub output: Vec<u8>,
 
 	// for external call
-	pub to: H160,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub to: Option<H160>,
 	#[serde(serialize_with = "bytes_0x_serialize")]
 	pub input: Vec<u8>,
 	pub value: U256,// TODO use some
@@ -122,6 +130,28 @@ pub struct SentioCallTrace {
 	#[serde(skip)]
 	pub function: Option<FunctionInfo>,
 }
+
+impl SentioCallTrace {
+	pub fn new(base_trace: SentioBaseTrace) -> Self {
+		return SentioCallTrace {
+			base: base_trace,
+			traces: vec![],
+			from: Default::default(),
+			output: vec![],
+			to: None,
+			input: vec![],
+			value: Default::default(),
+			name: None,
+			input_stack: vec![],
+			input_memory: None,
+			output_stack: vec![],
+			output_memory: None,
+			function_pc: 0,
+			exit_pc: 0,
+			function: None,
+		};
+	}
+}
 //
 // #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 // #[serde(rename_all = "camelCase")]
@@ -144,6 +174,14 @@ fn u64_serialize<S>(data: &u64, serializer: S) -> Result<S::Ok, S::Error>
 		S: Serializer,
 {
 	serializer.serialize_str(&format!("0x{:x}", *data))
+}
+
+fn original_opcode_serialize<S>(data: &Opcode, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+{
+	let bytes = opcodes_string(*data);
+	return opcode_serialize(&bytes, serializer);
 }
 
 fn is_zero(n: &u64) -> bool {
