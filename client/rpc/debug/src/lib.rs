@@ -567,9 +567,9 @@ where
 					}
 					single::TraceType::SentioCallList{ tracer_config } => {
 						let config: sentio::SentioTracerConfig = tracer_config.map(|x| {
-							let v: sentio::SentioTracerConfig = serde_json::from_str(&x).unwrap();
+							let v: sentio::SentioTracerConfig = serde_json::from_str(&x).unwrap_or_default();
 							v
-						}).unwrap_or(sentio::SentioTracerConfig::default());
+						}).unwrap_or_default();
 						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioCallList::new(config);
 						proxy.using(f)?;
 						proxy.finish_transaction();
