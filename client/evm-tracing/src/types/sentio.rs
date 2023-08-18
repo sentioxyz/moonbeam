@@ -3,6 +3,8 @@ use crate::types::serialization::*;
 use ethereum_types::{H160, H256, U256};
 use parity_scale_codec::{Decode, Encode};
 use serde::{Serialize, Deserialize, Serializer};
+use serde::ser::Error;
+use serde_json::Value;
 use evm_tracing_events::runtime::{Opcode, opcodes_string};
 
 #[derive(Clone, Eq, PartialEq, Default, Deserialize, Serialize)]
@@ -21,10 +23,10 @@ pub struct SentioTracerConfig {
 	pub with_internal_calls: bool,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
-#[derive(Default)]
+#[derive(Clone, Eq, PartialEq, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FunctionInfo {
+	#[serde(default)]
 	pub address: H160,
 	pub name: String,
 	pub signature_hash: String,
@@ -39,8 +41,11 @@ pub struct FunctionInfo {
 #[serde(rename_all = "camelCase")]
 pub struct SentioBaseTrace {
 	// Only in debug mode, TODO p3, make it vec<u8> and have it serialize to json
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub tracer_config: Option<String>,
+	#[serde(
+	skip_serializing_if = "Option::is_none",
+	serialize_with = "json_serialize"
+	)]
+	pub tracer_config: Option<Vec<u8>>,
 
 	#[serde(rename = "type", serialize_with = "original_opcode_serialize")]
 	pub op: Opcode,
@@ -113,12 +118,13 @@ pub struct SentioCallTrace {
 	// for internal trace
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub name: Option<String>,
+	// TODO remove trailing zero
 	#[serde(skip_serializing_if = "Vec::is_empty")]
-	pub input_stack: Vec<H256>,
+	pub input_stack: Vec<U256>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub input_memory: Option<Vec<H256>>,
 	#[serde(skip_serializing_if = "Vec::is_empty")]
-	pub output_stack: Vec<H256>,
+	pub output_stack: Vec<U256>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub output_memory: Option<Vec<H256>>,
 	#[serde(skip_serializing_if = "is_zero")]
@@ -184,6 +190,40 @@ fn original_opcode_serialize<S>(data: &Opcode, serializer: S) -> Result<S::Ok, S
 	return opcode_serialize(&bytes, serializer);
 }
 
+fn json_serialize<S>(data: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+{
+	if let Some(d) = data {
+		let v: Value = serde_json::from_slice(d).unwrap();
+		return v.serialize(serializer);
+	}
+	return Err(S::Error::custom("serialize error."))
+}
+
 fn is_zero(n: &u64) -> bool {
 	return *n == 0;
+}
+#[test]
+fn test_tracer_config_parse() {
+	let config_string = "{\n  \"calls\": {\n    \"0x18dd7bca62deee6f633221de26096fdd0c734daa\": [\n      79\n    ],\n    \"0x3773e1e9deb273fcdf9f80bc88bb387b1e6ce34d\": [\n      2959\n    ]\n  },\n  \"debug\": true,\n  \"functions\": {\n    \"0x18dd7bca62deee6f633221de26096fdd0c734daa\": [\n      {\n        \"inputMemory\": false,\n        \"inputSize\": 1,\n        \"name\": \"_setImplementation\",\n        \"outputMemory\": false,\n        \"outputSize\": 0,\n        \"pc\": 1593,\n        \"signatureHash\": \"0x\"\n      }\n    ]\n  },\n  \"noInternalCalls\": false,\n  \"withInternalCalls\": true\n}";
+
+	let v: SentioTracerConfig = serde_json::from_str(&config_string).unwrap();
+	assert_eq!(v.debug, true);
+	assert_eq!(v.calls.len(), 2);
+	assert_eq!(v.functions.len(), 1);
+}
+
+
+#[test]
+fn test_h256_to_u256() {
+	let string = "0f02ba4d7f83e59eaa32eae9c3c4d99b68ce76decade21cdab7ecce8f4aef81a";
+	let bytes = hex::decode(string).unwrap();
+	let h256 = H256::from_slice(&bytes);
+	let h256_bytes = h256.as_bytes();
+	assert_eq!(h256_bytes, bytes);
+	let u256 = U256::from(h256_bytes);
+	let u256_string = serde_json::to_string(&u256).unwrap();
+	let u256_sub = "0".to_string() + &u256_string[3..u256_string.len()-1].to_string();
+	assert_eq!(string, u256_sub);
 }

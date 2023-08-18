@@ -117,7 +117,9 @@ impl Listener {
 			let mut m: HashMap<u64, FunctionInfo> = Default::default();
 
 			for function in functions {
-				m.insert(function.pc, function.clone());
+				let mut  new_func = function.clone();
+				new_func.address = address;
+				m.insert(function.pc, new_func);
 			}
 			function_map.insert(address, m);
 		}
@@ -179,7 +181,7 @@ impl Listener {
 		}
 
 		if self.tracer_config.debug {
-			root.base.tracer_config = Some(serde_json::to_string(&self.tracer_config).unwrap_or_default());
+			root.base.tracer_config = Some(serde_json::to_vec(&self.tracer_config).unwrap_or_default());
 		}
 		self.results.push(root);
 
@@ -476,6 +478,19 @@ impl Listener {
 	}
 
 	fn create_root_trace(&mut self, from: H160, to: H160, op: Opcode, value: U256, data: Vec<u8>) {
+		if (op == Opcode::CALL || op == Opcode::CALLCODE) && data.len() >= 4 { // also not precompile
+			if let Some(m) = self.function_map.get(&to) {
+				let sig_hash = format!("0x{}", hex::encode(&data[0..4]));
+
+				for (pc, func) in m {
+					if func.signature_hash == sig_hash {
+						self.entry_pc.insert(*pc, true);
+					}
+				}
+				log::info!("entry pc match {} ({} times)", sig_hash, self.entry_pc.len());
+			}
+		}
+
 		let base_trace = SentioBaseTrace {
 			tracer_config: None,
 			op,
@@ -516,6 +531,7 @@ impl Listener {
 			gas: 0,
 			start_gas: 0,
 		});
+
 	}
 
 	fn patch_call_trace(&mut self, code_address: H160, transfer: Option<evm_tracing_events::evm::Transfer>,
@@ -740,11 +756,12 @@ fn stack_back(stack: &Stack, n: u64) -> &H256 {
 	return stack.data.get(stack.data.len() - (n as usize) - 1).expect("stack shouldn't be empty");
 }
 
-fn copy_stack(stack: &Stack, copy_size: usize) -> Vec<H256> {
+fn copy_stack(stack: &Stack, copy_size: usize) -> Vec<U256> {
 	let stack_size = stack.data.len();
-	let mut res: Vec<H256> = Vec::with_capacity(stack_size);
+	let mut res: Vec<U256> =  vec![U256::zero(); stack_size - copy_size];
+
 	for i in (stack_size - copy_size)..stack_size {
-		res[i] = stack.data[i]
+		res.push(U256::from(stack.data[i].as_bytes()));
 	}
 	return res;
 }
