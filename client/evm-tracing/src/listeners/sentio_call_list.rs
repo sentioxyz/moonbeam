@@ -333,7 +333,8 @@ impl Listener {
 									let log_trace = SentioEventTrace {
 										base: base_trace,
 										log: sentio::Log {
-											address: code_address,
+											address: context.address,
+											code_address,
 											topics,
 											data,
 										},

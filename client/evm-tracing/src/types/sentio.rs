@@ -83,6 +83,7 @@ pub enum SentioTrace {
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 pub struct Log {
 	pub address: H160,
+	pub code_address: H160,
 	pub topics: Vec<H256>,
 	#[serde(serialize_with = "bytes_0x_serialize")]
 	pub data: Vec<u8>,
