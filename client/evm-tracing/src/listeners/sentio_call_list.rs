@@ -237,7 +237,7 @@ impl Listener {
 				match op {
 					Opcode::CREATE | Opcode::CREATE2 | Opcode::CALL | Opcode::CALLCODE | Opcode::DELEGATECALL | Opcode::STATICCALL | Opcode::SUICIDE => {
 						self.context_stack.push(Context {
-							address: context.address,
+							address: H160::zero(),
 							code_address: None,
 							current_step: None,
 							current_opcode: None,
@@ -553,6 +553,7 @@ impl Listener {
 			call.value = value;
 
 			let call_context = self.context_stack.last_mut().expect("context stack should not be empty");
+			call_context.address = context.address;
 			call_context.code_address = Some(code_address);
 		}
 	}
