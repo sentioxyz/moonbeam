@@ -73,7 +73,7 @@ impl Context {
 #[derive(Debug, Clone)]
 struct Step {
 	/// Current opcode.
-	opcode: Vec<u8>,
+	opcode: Opcode,
 	/// Gas cost of the following opcode.
 	gas_cost: u64,
 	/// Program counter position.
@@ -211,14 +211,14 @@ impl Listener {
 					context.gas = snapshot.gas();
 				}
 			}
-			// TODO check why using this break result
-			// GasometerEvent::RecordStipend { stipend, snapshot } => {
-			// 	if let Some(context) = self.context_stack.last_mut() {
-			// 		let gas = snapshot.gas();
-			// 		log::warn!("stipend {}, {} found, not battle tested", stipend, gas);
-			// 		context.gas = gas;
-			// 	}
-			// }
+			GasometerEvent::RecordStipend { stipend, snapshot } => {
+				if let Some(context) = self.context_stack.last_mut() {
+					let gas = snapshot.gas();
+					log::warn!("stipend {}, {} found, not battle tested", stipend, gas);
+					// TODO check why this work
+					context.gas += gas;
+				}
+			}
 			// GasometerEvent::RecordTransaction { cost, snapshot } => {
 			// 	if let Some(call) = self.call_stack.last_mut() {
 			// 		call.base.gas_used = cost;
@@ -237,7 +237,7 @@ impl Listener {
 				match op {
 					Opcode::CREATE | Opcode::CREATE2 | Opcode::CALL | Opcode::CALLCODE | Opcode::DELEGATECALL | Opcode::STATICCALL | Opcode::SUICIDE => {
 						self.context_stack.push(Context {
-							address: context.address,
+							address: H160::zero(),
 							code_address: None,
 							current_step: None,
 							current_opcode: None,
@@ -250,8 +250,12 @@ impl Listener {
 
 				// Ignore steps outside of any context (shouldn't even be possible).
 				if let Some(context) = self.context_stack.last_mut() {
+					if self.tracer_config.debug {
+						let op_string = std::str::from_utf8(&opcode).unwrap();
+						context.current_opcode = Some(op_string.to_string());
+					}
 					context.current_step = Some(Step {
-						opcode,
+						opcode: op,
 						gas_cost: 0,  // 0 for now, will add with gas events (for all)
 						pc: *position.as_ref().unwrap_or(&0),
 						// TODO check if this safe or cost too much?
@@ -279,10 +283,6 @@ impl Listener {
 							} = current_step;
 
 							self.index = self.index + 1;
-							let op = to_opcode(&opcode);
-
-							let op_string = std::str::from_utf8(&opcode).unwrap();
-							context.current_opcode = Some(op_string.to_string());
 
 							if self.call_stack[0].base.start_index == -1 && *self.entry_pc.get(&pc).unwrap_or(&false) {
 								self.call_stack[0].base.pc = pc;
@@ -295,7 +295,7 @@ impl Listener {
 								pc,
 								start_index: self.index - 1,
 								end_index: self.index,
-								op,
+								op: opcode,
 								gas: context.gas,
 								gas_used: gas_cost,
 								error: None,
@@ -315,13 +315,13 @@ impl Listener {
 								_ => None,
 							};
 
-							match op {
+							match opcode {
 								Opcode::CREATE | Opcode::CREATE2 | Opcode::CALL | Opcode::CALLCODE | Opcode::DELEGATECALL | Opcode::STATICCALL | Opcode::SUICIDE => {
 									let call_trace: SentioCallTrace = SentioCallTrace::new(base_trace);
 									self.call_stack.push(call_trace)
 								}
 								Opcode::LOG0 | Opcode::LOG1 | Opcode::LOG2 | Opcode::LOG3 | Opcode::LOG4 => {
-									let topic_count = (op.as_u8() - Opcode::LOG0.as_u8()) as u64;
+									let topic_count = (opcode.as_u8() - Opcode::LOG0.as_u8()) as u64;
 									let log_offset = stack_back(&stack, 0);
 									let log_size = stack_back(&stack, 1);
 									let data = copy_memory(&memory, log_offset.to_low_u64_be() as usize, log_size.to_low_u64_be() as usize);
@@ -551,8 +551,8 @@ impl Listener {
 			call.to = Some(context.address);
 			call.input = input;
 			call.value = value;
-
 			let call_context = self.context_stack.last_mut().expect("context stack should not be empty");
+			call_context.address = context.address;
 			call_context.code_address = Some(code_address);
 		}
 	}
