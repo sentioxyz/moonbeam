@@ -16,7 +16,7 @@
 
 use crate::types::single::TransactionTrace;
 
-use crate::listeners::sentio_call_list::Listener;
+use crate::listeners::sentio_prestate::Listener;
 
 pub struct Formatter;
 
@@ -28,7 +28,7 @@ impl super::ResponseFormatter for Formatter {
 		if listener.results.is_empty() {
 			None
 		} else {
-			Some(listener.results.into_iter().map(|call| TransactionTrace::SentioCallTrace(call)).collect())
+			Some(listener.results.into_iter().map(|trace| TransactionTrace::SentioPrestateTrace(trace)).collect())
 		}
 	}
 }

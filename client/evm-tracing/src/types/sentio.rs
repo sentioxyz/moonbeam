@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap};
 use crate::types::serialization::*;
 
 use ethereum_types::{H160, H256, U256};
@@ -7,14 +8,14 @@ use serde::ser::Error;
 use serde_json::Value;
 use evm_tracing_events::runtime::{Opcode, opcodes_string};
 
-#[derive(Clone, Eq, PartialEq, Default, Deserialize, Serialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Default, Encode, Decode, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentioTracerConfig {
 	#[serde(default)]
-	pub functions: std::collections::HashMap<String, Vec<FunctionInfo>>,
+	pub functions: BTreeMap<String, Vec<FunctionInfo>>,
 
 	#[serde(default)]
-	pub calls: std::collections::HashMap<String, Vec<u64>>,
+	pub calls: BTreeMap<String, Vec<u64>>,
 
 	#[serde(default)]
 	pub debug: bool,
@@ -23,7 +24,7 @@ pub struct SentioTracerConfig {
 	pub with_internal_calls: bool,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Eq, PartialEq, Debug, Default, Encode, Decode, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FunctionInfo {
 	#[serde(default)]
@@ -215,7 +216,6 @@ fn test_tracer_config_parse() {
 	assert_eq!(v.functions.len(), 1);
 }
 
-
 #[test]
 fn test_h256_to_u256() {
 	let string = "0f02ba4d7f83e59eaa32eae9c3c4d99b68ce76decade21cdab7ecce8f4aef81a";
@@ -227,4 +227,31 @@ fn test_h256_to_u256() {
 	let u256_string = serde_json::to_string(&u256).unwrap();
 	let u256_sub = "0".to_string() + &u256_string[3..u256_string.len()-1].to_string();
 	assert_eq!(string, u256_sub);
+}
+
+#[derive(Clone, Eq, PartialEq, Default, Debug, Encode, Decode, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SentioPrestateTracerConfig {
+	#[serde(default)]
+	pub diff_mode: bool
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+	balance: Option<H256>,
+	code: Vec<u8>,
+	nonce:u64,
+	storage: BTreeMap<U256, U256>,
+	code_address: Option<H160>
+}
+
+pub type State = BTreeMap<H160, Account>;
+
+#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SentioPrestateTrace {
+	pre: State,
+	post: Option<State>,
+	mapping_keys: BTreeMap<String, String>
 }

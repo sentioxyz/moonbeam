@@ -708,8 +708,6 @@ impl ListenerT for Listener {
 			Event::CallListNew() => {
 				if !self.call_list_first_transaction {
 					self.finish_transaction();
-					// self.skip_next_context = false;
-					// self.entries.push(BTreeMap::new());
 				} else {
 					self.call_list_first_transaction = false;
 				}
