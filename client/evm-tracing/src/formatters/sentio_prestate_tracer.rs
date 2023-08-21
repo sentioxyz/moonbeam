@@ -14,17 +14,33 @@
 // You should have received a copy of the GNU General Public License
 // along with Moonbeam.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::marker::PhantomData;
+use fp_rpc::EthereumRuntimeRPCApi;
+use sp_api::{BlockT, ProvideRuntimeApi};
 use crate::types::single::TransactionTrace;
 
 use crate::listeners::sentio_prestate::Listener;
 
-pub struct Formatter;
+pub struct Formatter<B, C>
+	where
+		B: BlockT,
+		C:ProvideRuntimeApi<B>,
+		C::Api: EthereumRuntimeRPCApi<B> {
+	_b: PhantomData<B>,
+	_c: PhantomData<C>
+}
+// (PhantomData<B>, PhantomData<C>);
 
-impl super::ResponseFormatter for Formatter {
-	type Listener = Listener;
+impl<B, C> super::ResponseFormatter for Formatter<B, C>
+	where
+		B: BlockT,
+		C:ProvideRuntimeApi<B> + 'static,
+		C::Api: EthereumRuntimeRPCApi<B>
+{
+	type Listener = Listener<B, C>;
 	type Response = Vec<TransactionTrace>;
 
-	fn format(listener: Listener) -> Option<Vec<TransactionTrace>> {
+	fn format(listener: Listener<B, C>) -> Option<Vec<TransactionTrace>> {
 		if listener.results.is_empty() {
 			None
 		} else {

@@ -239,11 +239,11 @@ pub struct SentioPrestateTracerConfig {
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
-	balance: Option<H256>,
-	code: Vec<u8>,
-	nonce:u64,
-	storage: BTreeMap<U256, U256>,
-	code_address: Option<H160>
+	pub balance: Option<U256>,
+	pub code: Option<Vec<u8>>,
+	pub nonce:U256,
+	pub storage: BTreeMap<U256, U256>,
+	pub code_address: Option<H160>
 }
 
 pub type State = BTreeMap<H160, Account>;
@@ -251,7 +251,7 @@ pub type State = BTreeMap<H160, Account>;
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentioPrestateTrace {
-	pre: State,
-	post: Option<State>,
-	mapping_keys: BTreeMap<String, String>
+	pub pre: State,
+	pub post: Option<State>,
+	pub mapping_keys: BTreeMap<String, String>
 }

@@ -38,6 +38,7 @@ use sp_blockchain::{
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use std::{future::Future, marker::PhantomData, sync::Arc};
 use jsonrpsee::core::__reexports::serde_json;
+use sp_core::H160;
 
 pub enum RequesterInput {
 	Transaction(H256),
@@ -577,7 +578,9 @@ where
 						Ok(Response::Single(res.pop().expect("Trace result is empty.")))
 					}
 					single::TraceType::SentioPrestate { tracer_config } => {
-						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioPrestate::new(tracer_config.unwrap_or_default());
+						// client.runtime_api()
+						// api
+						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioPrestate::new(tracer_config.unwrap_or_default(),  header.hash().clone(), &client);
 						proxy.using(f)?;
 						proxy.finish_transaction();
 
