@@ -19,7 +19,7 @@ pub fn copy_stack(stack: &Stack, copy_size: usize) -> Vec<U256> {
 pub fn copy_memory(memory: &Memory, offset: usize, size: usize) -> Vec<u8> {
 	if memory.data.len() > offset {
 		let mut end = offset + size;
-		if memory.data.len() > end {
+		if end > memory.data.len() {
 			end = memory.data.len()
 		}
 		return Vec::from_iter(memory.data[offset..end].iter().cloned());

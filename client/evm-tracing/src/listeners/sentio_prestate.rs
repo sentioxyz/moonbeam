@@ -15,7 +15,7 @@
 // along with Moonbeam.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
-use ethereum_types::{BigEndianHash, H160, H256, H512, U256};
+use ethereum_types::{BigEndianHash, H160, H256, U256};
 use evm_tracing_events::{Event, EvmEvent, Listener as ListenerT, RuntimeEvent, StepEventFilter};
 use evm_tracing_events::runtime::{Memory, Opcode, Stack};
 use std::ops::Deref;
@@ -300,14 +300,15 @@ impl<B, C> Listener<B, C>
 
 						match opcode {
 							Opcode::SHA3 if stack_size >= 2 => {
-								let offset = stack_back(&stack, 0).to_low_u64_be();
 								let size = stack_back(&stack, 1).to_low_u64_be();
-								let raw_key = copy_memory(&memory, offset as usize, size as usize);
-								if raw_key.len() == 64 {
+								if size == 64 {
+									let offset = stack_back(&stack, 0).to_low_u64_be();
+									let raw_key = copy_memory(&memory, offset as usize, size as usize);
 									let digest = Keccak256::digest(&raw_key.as_slice());
 									let hash_of_key = H256::from_slice(&digest);
-									let key = H512::from_slice(raw_key.as_slice());
-									let account = self.pre.get_mut(&context.address).expect("not non");
+									// let key = H512::from_slice(raw_key.as_slice());
+									let key= format!("{}", hex::encode(raw_key));
+									let account = self.pre.get_mut(&context.address).expect("account should existed");
 									account.mapping_keys.insert(key, hash_of_key);
 								}
 							}

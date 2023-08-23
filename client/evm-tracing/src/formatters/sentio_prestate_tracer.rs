@@ -31,7 +31,6 @@ pub struct Formatter<B, C>
 	_b: PhantomData<B>,
 	_c: PhantomData<C>
 }
-// (PhantomData<B>, PhantomData<C>);
 
 impl<B, C> super::ResponseFormatter for Formatter<B, C>
 	where

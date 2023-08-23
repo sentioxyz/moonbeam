@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use crate::types::serialization::*;
 
-use ethereum_types::{H160, H256, H512, U256};
+use ethereum_types::{H160, H256, U256};
 use parity_scale_codec::{Decode, Encode};
 use serde::{Serialize, Deserialize, Serializer};
 use serde::ser::Error;
@@ -177,6 +177,14 @@ impl SentioCallTrace {
 //
 // }
 
+pub fn option_u256_serialize<S>(data: &Option<U256>, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+{
+	serializer.serialize_u64(data.unwrap_or_default().low_u64())
+}
+
+
 fn u64_serialize<S>(data: &u64, serializer: S) -> Result<S::Ok, S::Error>
 	where
 		S: Serializer,
@@ -252,7 +260,10 @@ pub struct Account {
 	)]
 	pub code: Vec<u8>,
 
-	#[serde(skip_serializing_if = "Option::is_none")]
+	#[serde(
+		skip_serializing_if = "Option::is_none",
+		serialize_with = "option_u256_serialize"
+	)]
 	pub nonce: Option<U256>,
 
 	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -262,7 +273,7 @@ pub struct Account {
 	pub code_address: Option<H160>,
 
 	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
-	pub mapping_keys: BTreeMap<H512, H256>,
+	pub mapping_keys: BTreeMap<String, H256>,
 }
 
 pub type State = BTreeMap<H160, Account>;
