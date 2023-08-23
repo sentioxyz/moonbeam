@@ -19,6 +19,7 @@ pub mod raw;
 
 pub mod sentio_call_list;
 pub mod sentio_prestate;
+mod sentio_util;
 
 pub use call_list::Listener as CallList;
 pub use raw::Listener as Raw;

@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap};
+use std::collections::BTreeMap;
 use crate::types::serialization::*;
 
-use ethereum_types::{H160, H256, U256};
+use ethereum_types::{H160, H256, H512, U256};
 use parity_scale_codec::{Decode, Encode};
 use serde::{Serialize, Deserialize, Serializer};
 use serde::ser::Error;
@@ -43,8 +43,8 @@ pub struct FunctionInfo {
 pub struct SentioBaseTrace {
 	// Only in debug mode, TODO p3, make it vec<u8> and have it serialize to json
 	#[serde(
-	skip_serializing_if = "Option::is_none",
-	serialize_with = "json_serialize"
+		skip_serializing_if = "Option::is_none",
+		serialize_with = "json_serialize"
 	)]
 	pub tracer_config: Option<Vec<u8>>,
 
@@ -60,14 +60,14 @@ pub struct SentioBaseTrace {
 	pub gas_used: u64,
 
 	#[serde(
-	skip_serializing_if = "Option::is_none",
-	serialize_with = "option_string_serialize"
+		skip_serializing_if = "Option::is_none",
+		serialize_with = "option_string_serialize"
 	)]
 	pub error: Option<Vec<u8>>,
 
 	#[serde(
-	skip_serializing_if = "Option::is_none",
-	serialize_with = "option_string_serialize"
+		skip_serializing_if = "Option::is_none",
+		serialize_with = "option_string_serialize"
 	)]
 	pub revert_reason: Option<Vec<u8>>,
 }
@@ -200,12 +200,13 @@ fn json_serialize<S>(data: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::
 		let v: Value = serde_json::from_slice(d).unwrap();
 		return v.serialize(serializer);
 	}
-	return Err(S::Error::custom("serialize error."))
+	return Err(S::Error::custom("serialize error."));
 }
 
 fn is_zero(n: &u64) -> bool {
 	return *n == 0;
 }
+
 #[test]
 fn test_tracer_config_parse() {
 	let config_string = "{\n  \"calls\": {\n    \"0x18dd7bca62deee6f633221de26096fdd0c734daa\": [\n      79\n    ],\n    \"0x3773e1e9deb273fcdf9f80bc88bb387b1e6ce34d\": [\n      2959\n    ]\n  },\n  \"debug\": true,\n  \"functions\": {\n    \"0x18dd7bca62deee6f633221de26096fdd0c734daa\": [\n      {\n        \"inputMemory\": false,\n        \"inputSize\": 1,\n        \"name\": \"_setImplementation\",\n        \"outputMemory\": false,\n        \"outputSize\": 0,\n        \"pc\": 1593,\n        \"signatureHash\": \"0x\"\n      }\n    ]\n  },\n  \"noInternalCalls\": false,\n  \"withInternalCalls\": true\n}";
@@ -225,7 +226,7 @@ fn test_h256_to_u256() {
 	assert_eq!(h256_bytes, bytes);
 	let u256 = U256::from(h256_bytes);
 	let u256_string = serde_json::to_string(&u256).unwrap();
-	let u256_sub = "0".to_string() + &u256_string[3..u256_string.len()-1].to_string();
+	let u256_sub = "0".to_string() + &u256_string[3..u256_string.len() - 1].to_string();
 	assert_eq!(string, u256_sub);
 }
 
@@ -233,17 +234,35 @@ fn test_h256_to_u256() {
 #[serde(rename_all = "camelCase")]
 pub struct SentioPrestateTracerConfig {
 	#[serde(default)]
-	pub diff_mode: bool
+	pub diff_mode: bool,
+
+	#[serde(default)]
+	pub debug: bool,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub balance: Option<U256>,
-	pub code: Option<Vec<u8>>,
-	pub nonce:U256,
-	pub storage: BTreeMap<U256, U256>,
-	pub code_address: Option<H160>
+
+	#[serde(
+		skip_serializing_if = "Vec::is_empty",
+		serialize_with = "bytes_0x_serialize"
+	)]
+	pub code: Vec<u8>,
+
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub nonce: Option<U256>,
+
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
+	pub storage: BTreeMap<H256, H256>,
+
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub code_address: Option<H160>,
+
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
+	pub mapping_keys: BTreeMap<H512, H256>,
 }
 
 pub type State = BTreeMap<H160, Account>;
@@ -251,7 +270,8 @@ pub type State = BTreeMap<H160, Account>;
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SentioPrestateTrace {
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
 	pub pre: State,
-	pub post: Option<State>,
-	pub mapping_keys: BTreeMap<String, String>
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
+	pub post: State,
 }

@@ -38,7 +38,6 @@ use sp_blockchain::{
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use std::{future::Future, marker::PhantomData, sync::Arc};
 use jsonrpsee::core::__reexports::serde_json;
-use sp_core::H160;
 
 pub enum RequesterInput {
 	Transaction(H256),
@@ -502,6 +501,20 @@ where
 		// Get the actual ethereum transaction.
 		if let Some(block) = reference_block {
 			let transactions = block.transactions;
+
+			let is_prestate = matches!(&trace_type, single::TraceType::SentioPrestate{..});
+			// TODO check if there is a better way to get those extrinsics
+			let mut try_ext: Vec<B::Extrinsic> = vec![];
+			if is_prestate  {
+				for ext in &exts {
+					try_ext.push(ext.clone());
+					let filtered_tx = api.extrinsic_filter(parent_block_hash, try_ext.clone()).unwrap();
+					if filtered_tx.len() == index + 1 {
+						break;
+					}
+				}
+			}
+
 			if let Some(transaction) = transactions.get(index) {
 				let f = || -> RpcResult<_> {
 					api.initialize_block(parent_block_hash, &header)
@@ -578,9 +591,16 @@ where
 						Ok(Response::Single(res.pop().expect("Trace result is empty.")))
 					}
 					single::TraceType::SentioPrestate { tracer_config } => {
-						// client.runtime_api()
-						// api
-						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioPrestate::new(tracer_config.unwrap_or_default(),  header.hash().clone(), &client);
+						let new_api = client.runtime_api();
+						new_api.initialize_block(parent_block_hash, &header)
+							.map_err(|e| internal_err(format!("Runtime api access error: {:?}", e)))?;
+
+						let mut proxy: moonbeam_client_evm_tracing::listeners::SentioPrestate<B, C> = moonbeam_client_evm_tracing::listeners::SentioPrestate::new(
+							tracer_config.unwrap_or_default(),
+							header.parent_hash().clone(),
+							try_ext,
+							block.header.beneficiary.clone(),
+							&new_api);
 						proxy.using(f)?;
 						proxy.finish_transaction();
 
