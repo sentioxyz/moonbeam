@@ -160,22 +160,55 @@ impl SentioCallTrace {
 		};
 	}
 }
-//
-// #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct SentioInternalCallTrace {
-//   #[serde(skip_serializing_if = "Option::is_none")]
-//   pub name: Option<String>,
-//
-//   #[serde(flatten)]
-//   pub base: BaseSentioTrace,
-//   pub traces: Vec<SentioTrace>,
-//   pub from: H160,
-//   #[serde(serialize_with = "bytes_0x_serialize")]
-//   pub output: Vec<u8>,
-//
-//
-// }
+
+#[derive(Clone, Eq, PartialEq, Default, Debug, Encode, Decode, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SentioPrestateTracerConfig {
+	#[serde(default)]
+	pub diff_mode: bool,
+
+	#[serde(default)]
+	pub debug: bool,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub balance: Option<U256>,
+
+	#[serde(
+		skip_serializing_if = "Vec::is_empty",
+		serialize_with = "bytes_0x_serialize"
+	)]
+	pub code: Vec<u8>,
+
+	#[serde(
+	skip_serializing_if = "Option::is_none",
+	serialize_with = "option_u256_serialize"
+	)]
+	pub nonce: Option<U256>,
+
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
+	pub storage: BTreeMap<H256, H256>,
+
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub code_address: Option<H160>,
+
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
+	pub mapping_keys: BTreeMap<String, H256>,
+}
+
+pub type State = BTreeMap<H160, Account>;
+
+#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SentioPrestateTrace {
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
+	pub pre: State,
+	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
+	pub post: State,
+}
 
 pub fn option_u256_serialize<S>(data: &Option<U256>, serializer: S) -> Result<S::Ok, S::Error>
 	where
@@ -236,53 +269,4 @@ fn test_h256_to_u256() {
 	let u256_string = serde_json::to_string(&u256).unwrap();
 	let u256_sub = "0".to_string() + &u256_string[3..u256_string.len() - 1].to_string();
 	assert_eq!(string, u256_sub);
-}
-
-#[derive(Clone, Eq, PartialEq, Default, Debug, Encode, Decode, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SentioPrestateTracerConfig {
-	#[serde(default)]
-	pub diff_mode: bool,
-
-	#[serde(default)]
-	pub debug: bool,
-}
-
-#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Account {
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub balance: Option<U256>,
-
-	#[serde(
-		skip_serializing_if = "Vec::is_empty",
-		serialize_with = "bytes_0x_serialize"
-	)]
-	pub code: Vec<u8>,
-
-	#[serde(
-		skip_serializing_if = "Option::is_none",
-		serialize_with = "option_u256_serialize"
-	)]
-	pub nonce: Option<U256>,
-
-	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
-	pub storage: BTreeMap<H256, H256>,
-
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub code_address: Option<H160>,
-
-	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
-	pub mapping_keys: BTreeMap<String, H256>,
-}
-
-pub type State = BTreeMap<H160, Account>;
-
-#[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SentioPrestateTrace {
-	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
-	pub pre: State,
-	#[serde(skip_serializing_if = "BTreeMap::is_empty")]
-	pub post: State,
 }
