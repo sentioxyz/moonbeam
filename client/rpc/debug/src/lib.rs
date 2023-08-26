@@ -22,7 +22,7 @@ use tokio::{
 	sync::{oneshot, Semaphore},
 };
 
-use ethereum_types::H256;
+use ethereum_types::{H160, H256};
 use fc_rpc::{frontier_backend_client, internal_err, OverrideHandle};
 use fp_rpc::EthereumRuntimeRPCApi;
 use moonbeam_client_evm_tracing::{formatters::ResponseFormatter, types::single};
@@ -38,15 +38,27 @@ use sp_blockchain::{
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use std::{future::Future, marker::PhantomData, sync::Arc};
 use jsonrpsee::core::__reexports::serde_json;
+use moonbeam_rpc_core_debug::{StorageEntry, StorageRangeResult};
+use sha3::{Digest, Keccak256};
+
+pub struct StorageRangeParam {
+	block_hash: H256,
+	tx_index: u64,
+	address: H160,
+	start_key: H256,
+	limit: u64
+}
 
 pub enum RequesterInput {
 	Transaction(H256),
 	Block(RequestBlockId),
+	StorageRange(StorageRangeParam),
 }
 
 pub enum Response {
 	Single(single::TransactionTrace),
 	Block(Vec<single::TransactionTrace>),
+	StorageRange(StorageRangeResult),
 }
 
 pub type Responder = oneshot::Sender<RpcResult<Response>>;
@@ -117,6 +129,35 @@ impl DebugServer for Debug {
 			.map_err(|err| internal_err(format!("debug service dropped the channel : {:?}", err)))?
 			.map(|res| match res {
 				Response::Block(res) => res,
+				_ => unreachable!(),
+			})
+	}
+
+	async fn storage_range_at(&self, block_hash: H256, tx_index: u64, address: H160, start_key: H256, limit: u64) -> RpcResult<StorageRangeResult> {
+		let requester = self.requester.clone();
+
+		let (tx, rx) = oneshot::channel();
+		// Send a message from the rpc handler to the service level task.
+		requester
+			.unbounded_send(((RequesterInput::StorageRange(StorageRangeParam {
+				block_hash,
+				tx_index,
+				address,
+				start_key,
+				limit,
+			}), None), tx))
+			.map_err(|err| {
+				internal_err(format!(
+					"failed to send request to debug service : {:?}",
+					err
+				))
+			})?;
+
+		// Receive a message from the service level task and send the rpc response.
+		rx.await
+			.map_err(|err| internal_err(format!("debug service dropped the channel : {:?}", err)))?
+			.map(|res| match res {
+				Response::StorageRange(res) => res,
 				_ => unreachable!(),
 			})
 	}
@@ -222,6 +263,39 @@ where
 									})?
 								}
 								.await,
+							);
+						});
+					}
+					Some(((RequesterInput::StorageRange(storage_range), params), response_tx)) => {
+						let client = client.clone();
+						let backend = backend.clone();
+						let frontier_backend = frontier_backend.clone();
+						let permit_pool = permit_pool.clone();
+						let overrides = overrides.clone();
+
+						tokio::task::spawn(async move {
+							let _ = response_tx.send(
+								async {
+									let _permit = permit_pool.acquire().await;
+
+									tokio::task::spawn_blocking(move || {
+										Self::handle_storage_range_request(
+											client.clone(),
+											backend.clone(),
+											frontier_backend.clone(),
+											storage_range,
+											overrides.clone(),
+										)
+									})
+										.await
+										.map_err(|e| {
+											internal_err(format!(
+												"Internal error on spawned task : {:?}",
+												e
+											))
+										})?
+								}
+									.await,
 							);
 						});
 					}
@@ -643,5 +717,101 @@ where
 			}
 		}
 		Err(internal_err("Runtime block call failed".to_string()))
+	}
+
+	fn handle_storage_range_request(
+		client: Arc<C>,
+		backend: Arc<BE>,
+		frontier_backend: Arc<fc_db::Backend<B>>,
+		storage_range: StorageRangeParam,
+		overrides: Arc<OverrideHandle<B>>,
+	) -> RpcResult<Response> {
+		// frontier_backend.
+
+		let reference_id: BlockId<B> =
+			match frontier_backend_client::load_hash::<B, C>(
+				client.as_ref(),
+				frontier_backend.as_ref(),
+				storage_range.block_hash,
+			) {
+				Ok(Some(hash)) => Ok(BlockId::Hash(hash)),
+				Ok(_) => Err(internal_err("Block hash not found".to_string())),
+				Err(e) => Err(e),
+			}?;
+
+		// Get ApiRef. This handle allow to keep changes between txs in an internal buffer.
+		let api = client.runtime_api();
+		// Get Blockchain backend
+		let blockchain = backend.blockchain();
+		// Get the header I want to work with.
+		let Ok(hash) = client.expect_block_hash_from_id(&reference_id) else {
+			return Err(internal_err("Block header not found"))
+		};
+		let header = match client.header(hash) {
+			Ok(Some(h)) => h,
+			_ => return Err(internal_err("Block header not found")),
+		};
+
+		// Get parent blockid.
+		let parent_block_hash = *header.parent_hash();
+
+		let schema = fc_storage::onchain_storage_schema::<B, C, BE>(client.as_ref(), hash);
+
+		// Using storage overrides we align with `:ethereum_schema` which will result in proper
+		// SCALE decoding in case of migration.
+		let statuses = match overrides.schemas.get(&schema) {
+			Some(schema) => schema
+				.current_transaction_statuses(hash)
+				.unwrap_or_default(),
+			_ => {
+				return Err(internal_err(format!(
+					"No storage override at {:?}",
+					reference_id
+				)))
+			}
+		};
+
+		// // Known ethereum transaction hashes.
+		// let eth_tx_hashes: Vec<_> = statuses.iter().map(|t| t.transaction_hash).collect();
+
+		// Get block extrinsics.
+		let exts = blockchain
+			.body(hash)
+			.map_err(|e| internal_err(format!("Fail to read blockchain db: {:?}", e)))?
+			.unwrap_or_default();
+
+		api.initialize_block(parent_block_hash, &header)
+			.map_err(|e| internal_err(format!("Runtime api access error: {:?}", e)))?;
+		if storage_range.tx_index as usize >= statuses.len() {
+			panic!("tx index is too large");
+		}
+		let to = exts.len() - (statuses.len() - storage_range.tx_index as usize);
+		let mut i = 0;
+		for ext in exts {
+			if i >= to {
+				break;
+			}
+			i = i + 1;
+			let _ = api.apply_extrinsic(parent_block_hash, ext);
+		}
+
+		let (storages, next_key) = api.storage_range_at(
+			parent_block_hash,
+			storage_range.address,
+			storage_range.start_key,
+			storage_range.limit
+		).expect("should have result");
+
+		let mut result = StorageRangeResult {
+			storage: Default::default(),
+			next_key: next_key,
+		};
+
+		for (key, value) in  storages {
+			let key_hash = H256::from_slice(Keccak256::digest(key.as_bytes()).as_slice());
+			result.storage.insert(key_hash, StorageEntry{ key, value });
+		}
+
+		return Ok(Response::StorageRange(result));
 	}
 }

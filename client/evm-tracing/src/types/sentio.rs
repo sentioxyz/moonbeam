@@ -78,7 +78,6 @@ pub enum SentioTrace {
 	EventTrace(SentioEventTrace),
 	CallTrace(SentioCallTrace),
 	OtherTrace(SentioBaseTrace),
-	// InternalCallTrace(SentioInternalCallTrace)
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
