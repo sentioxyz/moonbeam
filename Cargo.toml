@@ -229,47 +229,47 @@ ethereum-types = { version = "0.14", default-features = false }
 evm = { git = "https://github.com/purestake/evm", branch = "tgm-record-external-cost", default-features = false }
 evm-gasometer = { git = "https://github.com/purestake/evm", branch = "tgm-record-external-cost", default-features = false }
 evm-runtime = { git = "https://github.com/purestake/evm", branch = "tgm-record-external-cost", default-features = false }
-fp-ethereum = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
-fp-evm = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
-fp-rpc = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
-fp-self-contained = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
-pallet-base-fee = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
-pallet-ethereum = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
+fp-ethereum = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
+fp-evm = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
+fp-rpc = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
+fp-self-contained = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
+pallet-base-fee = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
+pallet-ethereum = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
 	"forbid-evm-reentrancy",
 	"evm-with-weight-limit",
 ] }
-pallet-evm = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
+pallet-evm = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
 	"forbid-evm-reentrancy",
 	"evm-with-weight-limit",
 ] }
-pallet-evm-precompile-blake2 = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
+pallet-evm-precompile-blake2 = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
 	"evm-with-weight-limit",
 ] }
-pallet-evm-precompile-bn128 = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
+pallet-evm-precompile-bn128 = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
 	"evm-with-weight-limit",
 ] }
-pallet-evm-precompile-dispatch = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
+pallet-evm-precompile-dispatch = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
 	"evm-with-weight-limit",
 ] }
-pallet-evm-precompile-modexp = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
+pallet-evm-precompile-modexp = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
 	"evm-with-weight-limit",
 ] }
-pallet-evm-precompile-sha3fips = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
-pallet-evm-precompile-simple = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
+pallet-evm-precompile-sha3fips = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
+pallet-evm-precompile-simple = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", default-features = false, features = [
 	"evm-with-weight-limit",
 ] }
 
 # Frontier (client)
-fc-consensus = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40" }
-fc-db = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40" }
-fc-mapping-sync = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40" }
-fc-rpc = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40", features = [
+fc-consensus = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40" }
+fc-db = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40" }
+fc-mapping-sync = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40" }
+fc-rpc = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40", features = [
 	"rpc-binary-search-estimate",
 ] }
-fc-rpc-core = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40" }
-fc-storage = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40" }
-fp-consensus = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40" }
-fp-storage = { git = "https://github.com/purestake/frontier", branch = "moonbeam-polkadot-v0.9.40" }
+fc-rpc-core = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40" }
+fc-storage = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40" }
+fp-consensus = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40" }
+fp-storage = { git = "https://github.com/sentioxyz/frontier", branch = "moonbeam-polkadot-v0.9.40" }
 
 # Cumulus / Nimbus (wasm)
 cumulus-pallet-dmp-queue = { git = "https://github.com/purestake/cumulus", branch = "moonbeam-polkadot-v0.9.40", default-features = false }
