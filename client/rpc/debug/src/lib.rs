@@ -795,23 +795,30 @@ where
 			let _ = api.apply_extrinsic(parent_block_hash, ext);
 		}
 
-		let (storages, next_key) = api.storage_range_at(
+		let version = api.version(parent_block_hash).expect("has version");
+		let res = api.storage_range_at(
 			parent_block_hash,
 			storage_range.address,
 			storage_range.start_key,
 			storage_range.limit
-		).expect("should have result");
+		);
+		match res {
+			Ok((storages, next_key)) => {
+				let mut result = StorageRangeResult {
+					storage: Default::default(),
+					next_key: next_key,
+				};
 
-		let mut result = StorageRangeResult {
-			storage: Default::default(),
-			next_key: next_key,
-		};
+				for (key, value) in  storages {
+					let key_hash = H256::from_slice(Keccak256::digest(key.as_bytes()).as_slice());
+					result.storage.insert(key_hash, StorageEntry{ key, value });
+				}
 
-		for (key, value) in  storages {
-			let key_hash = H256::from_slice(Keccak256::digest(key.as_bytes()).as_slice());
-			result.storage.insert(key_hash, StorageEntry{ key, value });
+				return Ok(Response::StorageRange(result));
+			}
+			Err(e) => {
+				return Err(internal_err(e.to_string()));
+			}
 		}
-
-		return Ok(Response::StorageRange(result));
 	}
 }
