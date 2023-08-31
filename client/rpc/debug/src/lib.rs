@@ -279,7 +279,7 @@ where
 							);
 						});
 					}
-					Some(((RequesterInput::StorageRange(storage_range), params), response_tx)) => {
+					Some(((RequesterInput::StorageRange(storage_range), ..), response_tx)) => {
 						let client = client.clone();
 						let backend = backend.clone();
 						let frontier_backend = frontier_backend.clone();
@@ -856,7 +856,11 @@ where
 				return Ok(Response::StorageRange(result));
 			}
 			Err(e) => {
-				return Err(internal_err(e.to_string()));
+				return Err(internal_err(format!(
+					"{} for version {}",
+					e.to_string(),
+					version.spec_version
+				)));
 			}
 		}
 	}
