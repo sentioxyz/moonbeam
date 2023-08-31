@@ -25,11 +25,14 @@ use tokio::{
 use ethereum_types::{H160, H256};
 use fc_rpc::{frontier_backend_client, internal_err, OverrideHandle};
 use fp_rpc::EthereumRuntimeRPCApi;
+use jsonrpsee::core::__reexports::serde_json;
 use moonbeam_client_evm_tracing::{formatters::ResponseFormatter, types::single};
+use moonbeam_rpc_core_debug::{StorageEntry, StorageRangeResult};
 use moonbeam_rpc_core_types::{RequestBlockId, RequestBlockTag};
 use moonbeam_rpc_primitives_debug::{DebugRuntimeApi, TracerInput};
 use sc_client_api::backend::{Backend, StateBackend, StorageProvider};
 use sc_utils::mpsc::TracingUnboundedSender;
+use sha3::{Digest, Keccak256};
 use sp_api::{ApiExt, BlockId, Core, HeaderT, ProvideRuntimeApi};
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::{
@@ -37,16 +40,13 @@ use sp_blockchain::{
 };
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT, UniqueSaturatedInto};
 use std::{future::Future, marker::PhantomData, sync::Arc};
-use jsonrpsee::core::__reexports::serde_json;
-use moonbeam_rpc_core_debug::{StorageEntry, StorageRangeResult};
-use sha3::{Digest, Keccak256};
 
 pub struct StorageRangeParam {
 	block_hash: H256,
 	tx_index: u64,
 	address: H160,
 	start_key: H256,
-	limit: u64
+	limit: u64,
 }
 
 pub enum RequesterInput {
@@ -133,19 +133,32 @@ impl DebugServer for Debug {
 			})
 	}
 
-	async fn storage_range_at(&self, block_hash: H256, tx_index: u64, address: H160, start_key: H256, limit: u64) -> RpcResult<StorageRangeResult> {
+	async fn storage_range_at(
+		&self,
+		block_hash: H256,
+		tx_index: u64,
+		address: H160,
+		start_key: H256,
+		limit: u64,
+	) -> RpcResult<StorageRangeResult> {
 		let requester = self.requester.clone();
 
 		let (tx, rx) = oneshot::channel();
 		// Send a message from the rpc handler to the service level task.
 		requester
-			.unbounded_send(((RequesterInput::StorageRange(StorageRangeParam {
-				block_hash,
-				tx_index,
-				address,
-				start_key,
-				limit,
-			}), None), tx))
+			.unbounded_send((
+				(
+					RequesterInput::StorageRange(StorageRangeParam {
+						block_hash,
+						tx_index,
+						address,
+						start_key,
+						limit,
+					}),
+					None,
+				),
+				tx,
+			))
 			.map_err(|err| {
 				internal_err(format!(
 					"failed to send request to debug service : {:?}",
@@ -287,15 +300,15 @@ where
 											overrides.clone(),
 										)
 									})
-										.await
-										.map_err(|e| {
-											internal_err(format!(
-												"Internal error on spawned task : {:?}",
-												e
-											))
-										})?
+									.await
+									.map_err(|e| {
+										internal_err(format!(
+											"Internal error on spawned task : {:?}",
+											e
+										))
+									})?
 								}
-									.await,
+								.await,
 							);
 						});
 					}
@@ -311,7 +324,7 @@ where
 		match params {
 			Some(TraceParams {
 				tracer: Some(tracer),
-						 tracer_config,
+				tracer_config,
 				..
 			}) => {
 				const BLOCKSCOUT_JS_CODE_HASH: [u8; 16] =
@@ -325,9 +338,21 @@ where
 					} else if tracer == "callTracer" {
 						Some(TracerInput::CallTracer)
 					} else if tracer == "sentioTracer" {
-						return Ok((TracerInput::None, single::TraceType::SentioCallList { tracer_config: tracer_config.map(|x| serde_json::from_value(x).unwrap_or_default())}))
+						return Ok((
+							TracerInput::None,
+							single::TraceType::SentioCallList {
+								tracer_config: tracer_config
+									.map(|x| serde_json::from_value(x).unwrap_or_default()),
+							},
+						));
 					} else if tracer == "sentioPrestateTracer" {
-						return Ok((TracerInput::None, single::TraceType::SentioPrestate { tracer_config: tracer_config.map(|x| serde_json::from_value(x).unwrap_or_default())}))
+						return Ok((
+							TracerInput::None,
+							single::TraceType::SentioPrestate {
+								tracer_config: tracer_config
+									.map(|x| serde_json::from_value(x).unwrap_or_default()),
+							},
+						));
 					} else {
 						None
 					};
@@ -576,13 +601,15 @@ where
 		if let Some(block) = reference_block {
 			let transactions = block.transactions;
 
-			let is_prestate = matches!(&trace_type, single::TraceType::SentioPrestate{..});
+			let is_prestate = matches!(&trace_type, single::TraceType::SentioPrestate { .. });
 			// TODO check if there is a better way to get those extrinsics
 			let mut try_ext: Vec<B::Extrinsic> = vec![];
-			if is_prestate  {
+			if is_prestate {
 				for ext in &exts {
 					try_ext.push(ext.clone());
-					let filtered_tx = api.extrinsic_filter(parent_block_hash, try_ext.clone()).unwrap();
+					let filtered_tx = api
+						.extrinsic_filter(parent_block_hash, try_ext.clone())
+						.unwrap();
 					if filtered_tx.len() == index + 1 {
 						break;
 					}
@@ -654,31 +681,44 @@ where
 						))
 					}
 					single::TraceType::SentioCallList { tracer_config } => {
-						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioCallList::new(tracer_config.unwrap_or_default());
+						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioCallList::new(
+							tracer_config.unwrap_or_default(),
+						);
 						proxy.using(f)?;
 						proxy.finish_transaction();
 
-						let mut res = moonbeam_client_evm_tracing::formatters::SentioTracer::format(proxy)
-							.ok_or("Trace result is empty.")
-							.map_err(|e| internal_err(format!("{:?}", e)))?;
+						let mut res =
+							moonbeam_client_evm_tracing::formatters::SentioTracer::format(proxy)
+								.ok_or("Trace result is empty.")
+								.map_err(|e| internal_err(format!("{:?}", e)))?;
 
 						Ok(Response::Single(res.pop().expect("Trace result is empty.")))
 					}
 					single::TraceType::SentioPrestate { tracer_config } => {
 						let new_api = client.runtime_api();
-						new_api.initialize_block(parent_block_hash, &header)
-							.map_err(|e| internal_err(format!("Runtime api access error: {:?}", e)))?;
+						new_api
+							.initialize_block(parent_block_hash, &header)
+							.map_err(|e| {
+								internal_err(format!("Runtime api access error: {:?}", e))
+							})?;
 
-						let mut proxy: moonbeam_client_evm_tracing::listeners::SentioPrestate<B, C> = moonbeam_client_evm_tracing::listeners::SentioPrestate::new(
+						let mut proxy: moonbeam_client_evm_tracing::listeners::SentioPrestate<
+							B,
+							C,
+						> = moonbeam_client_evm_tracing::listeners::SentioPrestate::new(
 							tracer_config.unwrap_or_default(),
 							header.parent_hash().clone(),
 							try_ext,
 							block.header.beneficiary.clone(),
-							&new_api);
+							&new_api,
+						);
 						proxy.using(f)?;
 						proxy.finish_transaction();
 
-						let mut res = moonbeam_client_evm_tracing::formatters::SentioPrestateTracer::format(proxy)
+						let mut res =
+							moonbeam_client_evm_tracing::formatters::SentioPrestateTracer::format(
+								proxy,
+							)
 							.ok_or("Trace result is empty.")
 							.map_err(|e| internal_err(format!("{:?}", e)))?;
 
@@ -728,16 +768,15 @@ where
 	) -> RpcResult<Response> {
 		// frontier_backend.
 
-		let reference_id: BlockId<B> =
-			match frontier_backend_client::load_hash::<B, C>(
-				client.as_ref(),
-				frontier_backend.as_ref(),
-				storage_range.block_hash,
-			) {
-				Ok(Some(hash)) => Ok(BlockId::Hash(hash)),
-				Ok(_) => Err(internal_err("Block hash not found".to_string())),
-				Err(e) => Err(e),
-			}?;
+		let reference_id: BlockId<B> = match frontier_backend_client::load_hash::<B, C>(
+			client.as_ref(),
+			frontier_backend.as_ref(),
+			storage_range.block_hash,
+		) {
+			Ok(Some(hash)) => Ok(BlockId::Hash(hash)),
+			Ok(_) => Err(internal_err("Block hash not found".to_string())),
+			Err(e) => Err(e),
+		}?;
 
 		// Get ApiRef. This handle allow to keep changes between txs in an internal buffer.
 		let api = client.runtime_api();
@@ -800,7 +839,7 @@ where
 			parent_block_hash,
 			storage_range.address,
 			storage_range.start_key,
-			storage_range.limit
+			storage_range.limit,
 		);
 		match res {
 			Ok((storages, next_key)) => {
@@ -809,9 +848,9 @@ where
 					next_key: next_key,
 				};
 
-				for (key, value) in  storages {
+				for (key, value) in storages {
 					let key_hash = H256::from_slice(Keccak256::digest(key.as_bytes()).as_slice());
-					result.storage.insert(key_hash, StorageEntry{ key, value });
+					result.storage.insert(key_hash, StorageEntry { key, value });
 				}
 
 				return Ok(Response::StorageRange(result));

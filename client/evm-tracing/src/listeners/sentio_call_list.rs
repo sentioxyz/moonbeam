@@ -423,7 +423,9 @@ impl Listener {
 									let output = &memory.data[log_offset..(log_offset + log_size)];
 
 									base_trace.error = Some(b"execution reverted".to_vec());
-									base_trace.revert_reason = unpack_revert(&output)
+									base_trace.revert_reason = unpack_revert(&output);
+									let last = self.call_stack.last_mut().expect("call stack should not be empty");
+									last.traces.push(SentioTrace::OtherTrace(base_trace))
 								}
 								_ if self.tracer_config.with_internal_calls => {
 									if base_trace.error.is_some() {

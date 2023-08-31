@@ -22,10 +22,12 @@
 use super::serialization::*;
 use serde::Serialize;
 
+use crate::types::sentio::{
+	SentioCallTrace, SentioPrestateTrace, SentioPrestateTracerConfig, SentioTracerConfig,
+};
 use ethereum_types::{H256, U256};
 use parity_scale_codec::{Decode, Encode};
 use sp_std::{collections::btree_map::BTreeMap, vec::Vec};
-use crate::types::sentio::{SentioCallTrace, SentioPrestateTrace, SentioPrestateTracerConfig, SentioTracerConfig};
 
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
 #[serde(rename_all = "camelCase", untagged)]
@@ -47,11 +49,11 @@ pub enum TraceType {
 	/// A single block trace. Use in `debug_traceTransactionByNumber` / `traceTransactionByHash`.
 	Block,
 	SentioCallList {
-		tracer_config: Option<SentioTracerConfig>
+		tracer_config: Option<SentioTracerConfig>,
 	},
 	SentioPrestate {
-		tracer_config: Option<SentioPrestateTracerConfig>
-	}
+		tracer_config: Option<SentioPrestateTracerConfig>,
+	},
 }
 
 /// Single transaction trace.
@@ -72,7 +74,7 @@ pub enum TransactionTrace {
 	/// Used by Geth's callTracer.
 	CallListNested(Call),
 	SentioCallTrace(SentioCallTrace),
-	SentioPrestateTrace(SentioPrestateTrace)
+	SentioPrestateTrace(SentioPrestateTrace),
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Encode, Decode, Serialize)]
