@@ -131,8 +131,8 @@ impl<B, C> Listener<B, C>
 					code: vec![],
 					nonce: None,
 					storage: Default::default(),
-					code_address: pre_account.code_address.clone(),
-					mapping_keys: pre_account.mapping_keys.clone(),
+					code_address: None,
+					mapping_keys: Default::default(),
 				};
 				let new_balance = basic.clone().map(|x| x.balance);
 				let new_nonce = basic.map(|x| x.nonce);

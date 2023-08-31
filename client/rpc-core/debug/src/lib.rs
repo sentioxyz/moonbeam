@@ -11,10 +11,11 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
-use std::collections::BTreeMap;
 // You should have received a copy of the GNU General Public License
 // along with Moonbeam.  If not, see <http://www.gnu.org/licenses/>.
-use ethereum_types::{H256, H160};
+
+use std::collections::BTreeMap;
+use ethereum_types::{H160, H256};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use moonbeam_client_evm_tracing::types::single;
 use moonbeam_rpc_core_types::RequestBlockId;
@@ -30,7 +31,7 @@ pub struct TraceParams {
 	/// Javascript tracer (we just check if it's Blockscout tracer string)
 	pub tracer: Option<String>,
 	pub timeout: Option<String>,
-	pub tracer_config: Option<Value>
+	pub tracer_config: Option<Value>,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
@@ -44,7 +45,7 @@ pub struct StorageEntry {
 #[serde(rename_all = "camelCase")]
 pub struct StorageRangeResult {
 	pub storage: BTreeMap<H256, StorageEntry>,
-	pub next_key: Option<H256>
+	pub next_key: Option<H256>,
 }
 
 #[rpc(server)]
@@ -69,6 +70,6 @@ pub trait Debug {
 		tx_index: u64,
 		address: H160,
 		start_key: H256,
-		limit: u64
+		limit: u64,
 	) -> RpcResult<StorageRangeResult>;
 }
