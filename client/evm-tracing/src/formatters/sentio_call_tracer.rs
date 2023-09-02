@@ -14,14 +14,21 @@
 // You should have received a copy of the GNU General Public License
 // along with Moonbeam.  If not, see <http://www.gnu.org/licenses/>.
 
-pub mod call_list;
-pub mod raw;
+use crate::types::single::TransactionTrace;
 
-pub mod sentio_call_list;
-pub mod sentio_prestate;
-mod sentio_util;
+use crate::listeners::sentio_call_list::Listener;
 
-pub use call_list::Listener as CallList;
-pub use raw::Listener as Raw;
-pub use sentio_call_list::Listener as SentioCallList;
-pub use sentio_prestate::Listener as SentioPrestate;
+pub struct Formatter;
+
+impl super::ResponseFormatter for Formatter {
+	type Listener = Listener;
+	type Response = Vec<TransactionTrace>;
+
+	fn format(listener: Listener) -> Option<Vec<TransactionTrace>> {
+		if listener.results.is_empty() {
+			None
+		} else {
+			Some(listener.results.into_iter().map(|call| TransactionTrace::SentioCallTrace(call)).collect())
+		}
+	}
+}

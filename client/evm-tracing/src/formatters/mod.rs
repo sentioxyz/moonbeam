@@ -19,10 +19,15 @@ pub mod call_tracer;
 pub mod raw;
 pub mod trace_filter;
 
+pub mod sentio_call_tracer;
+pub mod sentio_prestate_tracer;
+
 pub use blockscout::Formatter as Blockscout;
 pub use call_tracer::Formatter as CallTracer;
 pub use raw::Formatter as Raw;
 pub use trace_filter::Formatter as TraceFilter;
+pub use sentio_call_tracer::Formatter as SentioTracer;
+pub use sentio_prestate_tracer::Formatter as SentioPrestateTracer;
 
 use evm_tracing_events::Listener;
 use serde::Serialize;
