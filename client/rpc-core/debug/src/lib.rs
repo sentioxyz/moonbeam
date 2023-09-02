@@ -20,7 +20,7 @@ use fc_rpc_core::types::Bytes;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use moonbeam_client_evm_tracing::types::{block, single};
 use moonbeam_rpc_core_types::RequestBlockId;
-use serde::Deserialize;
+use serde::{Deserialize};
 
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
