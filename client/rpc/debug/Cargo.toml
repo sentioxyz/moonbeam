@@ -12,6 +12,7 @@ futures = { workspace = true, features = [ "compat" ] }
 hex-literal = { workspace = true }
 jsonrpsee = { workspace = true, features = [ "macros", "server" ] }
 tokio = { workspace = true, features = [ "sync", "time" ] }
+sha3 = { workspace = true }
 
 # Moonbeam
 moonbeam-client-evm-tracing = { workspace = true }

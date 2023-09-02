@@ -22,7 +22,6 @@ use tokio::{
 	sync::{oneshot, Semaphore},
 };
 
-use ethereum_types::H256;
 use fc_rpc::{frontier_backend_client, internal_err};
 use fc_storage::StorageOverride;
 use fp_rpc::EthereumRuntimeRPCApi;
@@ -125,6 +124,7 @@ impl DebugServer for Debug {
 			})
 	}
 
+<<<<<<< HEAD
 	/// Handler for `debug_traceCall` request. Communicates with the service-defined task
 	/// using channels.
 	async fn trace_call(
@@ -293,6 +293,39 @@ where
 							);
 						});
 					}
+					// Some(((RequesterInput::StorageRange(storage_range), ..), response_tx)) => {
+					// 	let client = client.clone();
+					// 	let backend = backend.clone();
+					// 	let frontier_backend = frontier_backend.clone();
+					// 	let permit_pool = permit_pool.clone();
+					// 	let overrides = overrides.clone();
+
+					// 	tokio::task::spawn(async move {
+					// 		let _ = response_tx.send(
+					// 			async {
+					// 				let _permit = permit_pool.acquire().await;
+
+					// 				tokio::task::spawn_blocking(move || {
+					// 					Self::handle_storage_range_request(
+					// 						client.clone(),
+					// 						backend.clone(),
+					// 						frontier_backend.clone(),
+					// 						storage_range,
+					// 						overrides.clone(),
+					// 					)
+					// 				})
+					// 				.await
+					// 				.map_err(|e| {
+					// 					internal_err(format!(
+					// 						"Internal error on spawned task : {:?}",
+					// 						e
+					// 					))
+					// 				})?
+					// 			}
+					// 			.await,
+					// 		);
+					// 	});
+					// }
 					_ => {}
 				}
 			}
@@ -305,6 +338,7 @@ where
 		match params {
 			Some(TraceParams {
 				tracer: Some(tracer),
+				tracer_config,
 				..
 			}) => {
 				const BLOCKSCOUT_JS_CODE_HASH: [u8; 16] =
@@ -317,6 +351,22 @@ where
 						Some(TracerInput::Blockscout)
 					} else if tracer == "callTracer" {
 						Some(TracerInput::CallTracer)
+					} else if tracer == "sentioTracer" {
+						return Ok((
+							TracerInput::None,
+							single::TraceType::SentioCallList {
+								tracer_config: tracer_config
+									.map(|x| serde_json::from_value(x).unwrap_or_default()),
+							},
+						));
+					} else if tracer == "sentioPrestateTracer" {
+						return Ok((
+							TracerInput::None,
+							single::TraceType::SentioPrestate {
+								tracer_config: tracer_config
+									.map(|x| serde_json::from_value(x).unwrap_or_default()),
+							},
+						));
 					} else {
 						None
 					};
@@ -567,6 +617,22 @@ where
 		// Get the actual ethereum transaction.
 		if let Some(block) = reference_block {
 			let transactions = block.transactions;
+
+			let is_prestate = matches!(&trace_type, single::TraceType::SentioPrestate { .. });
+			// TODO check if there is a better way to get those extrinsics
+			let mut try_ext: Vec<B::Extrinsic> = vec![];
+			if is_prestate {
+				for ext in &exts {
+					try_ext.push(ext.clone());
+					let filtered_tx = api
+						.extrinsic_filter(parent_block_hash, try_ext.clone())
+						.unwrap();
+					if filtered_tx.len() == index + 1 {
+						break;
+					}
+				}
+			}
+
 			if let Some(transaction) = transactions.get(index) {
 				let f = || -> RpcResult<_> {
 					let result = if trace_api_version >= 5 {
@@ -646,6 +712,50 @@ where
 								),
 							)?,
 						))
+					}
+					single::TraceType::SentioCallList { tracer_config } => {
+						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioCallList::new(
+							tracer_config.unwrap_or_default(),
+						);
+						proxy.using(f)?;
+						proxy.finish_transaction();
+
+						let mut res =
+							moonbeam_client_evm_tracing::formatters::SentioTracer::format(proxy)
+								.ok_or("Trace result is empty.")
+								.map_err(|e| internal_err(format!("{:?}", e)))?;
+
+						Ok(Response::Single(res.pop().expect("Trace result is empty.")))
+					}
+					single::TraceType::SentioPrestate { tracer_config } => {
+						let new_api = client.runtime_api();
+						new_api
+							.initialize_block(parent_block_hash, &header)
+							.map_err(|e| {
+								internal_err(format!("Runtime api access error: {:?}", e))
+							})?;
+
+						let mut proxy: moonbeam_client_evm_tracing::listeners::SentioPrestate<
+							B,
+							C,
+						> = moonbeam_client_evm_tracing::listeners::SentioPrestate::new(
+							tracer_config.unwrap_or_default(),
+							header.parent_hash().clone(),
+							try_ext,
+							block.header.beneficiary.clone(),
+							&new_api,
+						);
+						proxy.using(f)?;
+						proxy.finish_transaction();
+
+						let mut res =
+							moonbeam_client_evm_tracing::formatters::SentioPrestateTracer::format(
+								proxy,
+							)
+							.ok_or("Trace result is empty.")
+							.map_err(|e| internal_err(format!("{:?}", e)))?;
+
+						Ok(Response::Single(res.pop().expect("Trace result is empty.")))
 					}
 					single::TraceType::CallList => {
 						let mut proxy = moonbeam_client_evm_tracing::listeners::CallList::default();
