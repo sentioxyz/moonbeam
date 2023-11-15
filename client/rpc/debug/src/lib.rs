@@ -33,7 +33,7 @@ use moonbeam_rpc_primitives_debug::{DebugRuntimeApi, TracerInput};
 use sc_client_api::backend::{Backend, StateBackend, StorageProvider};
 use sc_utils::mpsc::TracingUnboundedSender;
 use sha3::{Digest, Keccak256};
-use sp_api::{ApiExt, BlockId, Core, HeaderT, ProvideRuntimeApi};
+use sp_api::{ApiExt, Core, ProvideRuntimeApi};
 use sp_block_builder::BlockBuilder;
 use sp_blockchain::{
 	Backend as BlockchainBackend, Error as BlockChainError, HeaderBackend, HeaderMetadata,
@@ -136,47 +136,47 @@ impl DebugServer for Debug {
 			})
 	}
 
-	async fn storage_range_at(
-		&self,
-		block_hash: H256,
-		tx_index: u64,
-		address: H160,
-		start_key: H256,
-		limit: u64,
-	) -> RpcResult<StorageRangeResult> {
-		let requester = self.requester.clone();
+	// 	async fn storage_range_at(
+	// 		&self,
+	// 		block_hash: H256,
+	// 		tx_index: u64,
+	// 		address: H160,
+	// 		start_key: H256,
+	// 		limit: u64,
+	// 	) -> RpcResult<StorageRangeResult> {
+	// 		let requester = self.requester.clone();
 
-		let (tx, rx) = oneshot::channel();
-		// Send a message from the rpc handler to the service level task.
-		requester
-			.unbounded_send((
-				(
-					RequesterInput::StorageRange(StorageRangeParam {
-						block_hash,
-						tx_index,
-						address,
-						start_key,
-						limit,
-					}),
-					None,
-				),
-				tx,
-			))
-			.map_err(|err| {
-				internal_err(format!(
-					"failed to send request to debug service : {:?}",
-					err
-				))
-			})?;
+	// 		let (tx, rx) = oneshot::channel();
+	// 		// Send a message from the rpc handler to the service level task.
+	// 		requester
+	// 			.unbounded_send((
+	// 				(
+	// 					RequesterInput::StorageRange(StorageRangeParam {
+	// 						block_hash,
+	// 						tx_index,
+	// 						address,
+	// 						start_key,
+	// 						limit,
+	// 					}),
+	// 					None,
+	// 				),
+	// 				tx,
+	// 			))
+	// 			.map_err(|err| {
+	// 				internal_err(format!(
+	// 					"failed to send request to debug service : {:?}",
+	// 					err
+	// 				))
+	// 			})?;
 
-		// Receive a message from the service level task and send the rpc response.
-		rx.await
-			.map_err(|err| internal_err(format!("debug service dropped the channel : {:?}", err)))?
-			.map(|res| match res {
-				Response::StorageRange(res) => res,
-				_ => unreachable!(),
-			})
-	}
+	// 		// Receive a message from the service level task and send the rpc response.
+	// 		rx.await
+	// 			.map_err(|err| internal_err(format!("debug service dropped the channel : {:?}", err)))?
+	// 			.map(|res| match res {
+	// 				Response::StorageRange(res) => res,
+	// 				_ => unreachable!(),
+	// 			})
+	// 	}
 }
 
 pub struct DebugHandler<B: BlockT, C, BE>(PhantomData<(B, C, BE)>);

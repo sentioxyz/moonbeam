@@ -324,17 +324,17 @@ macro_rules! impl_runtime_apis_plus_common {
 					pallet_evm::AccountStorages::<Runtime>::get(address, H256::from_slice(&tmp[..]))
 				}
 
-				fn storage_range_at(address: H160, start_key: H256, limit: u64) -> (Vec<(H256, H256)>, Option<H256>) {
-					let iter = pallet_evm::AccountStorages::<Runtime>::iter_prefix_from(address, start_key.as_bytes().to_vec());
-					let mut res: Vec<(H256, H256)> = vec![];
-					for (key, value) in iter {
-						if res.len() == limit as usize {
-							return (res, Some(key));
-						}
-						res.push((key, value));
-					}
-					return (res, None);
-				}
+				// fn storage_range_at(address: H160, start_key: H256, limit: u64) -> (Vec<(H256, H256)>, Option<H256>) {
+				// 	let iter = pallet_evm::AccountStorages::<Runtime>::iter_prefix_from(address, start_key.as_bytes().to_vec());
+				// 	let mut res: Vec<(H256, H256)> = vec![];
+				// 	for (key, value) in iter {
+				// 		if res.len() == limit as usize {
+				// 			return (res, Some(key));
+				// 		}
+				// 		res.push((key, value));
+				// 	}
+				// 	return (res, None);
+				// }
 
 				fn call(
 					from: H160,

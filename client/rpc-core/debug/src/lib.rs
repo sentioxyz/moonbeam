@@ -13,13 +13,13 @@
 
 // You should have received a copy of the GNU General Public License
 // along with Moonbeam.  If not, see <http://www.gnu.org/licenses/>.
-use std::collections::BTreeMap;
 use ethereum_types::{H160, H256};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 use moonbeam_client_evm_tracing::types::single;
 use moonbeam_rpc_core_types::RequestBlockId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Eq, PartialEq, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,13 +61,13 @@ pub trait Debug {
 		id: RequestBlockId,
 		params: Option<TraceParams>,
 	) -> RpcResult<Vec<single::TransactionTrace>>;
-	#[method(name = "debug_storageRangeAt")]
-	async fn storage_range_at(
-		&self,
-		block_hash: H256,
-		tx_index: u64,
-		address: H160,
-		start_key: H256,
-		limit: u64,
-	) -> RpcResult<StorageRangeResult>;
+	// #[method(name = "debug_storageRangeAt")]
+	// async fn storage_range_at(
+	// 	&self,
+	// 	block_hash: H256,
+	// 	tx_index: u64,
+	// 	address: H160,
+	// 	start_key: H256,
+	// 	limit: u64,
+	// ) -> RpcResult<StorageRangeResult>;
 }

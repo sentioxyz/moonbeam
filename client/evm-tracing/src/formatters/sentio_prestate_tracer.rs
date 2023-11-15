@@ -16,7 +16,8 @@
 
 use std::marker::PhantomData;
 use fp_rpc::EthereumRuntimeRPCApi;
-use sp_api::{BlockT, ProvideRuntimeApi};
+use sp_api::ProvideRuntimeApi;
+use sp_runtime::traits::Block as BlockT;
 use sp_block_builder::BlockBuilder;
 use crate::types::single::TransactionTrace;
 
@@ -25,7 +26,7 @@ use crate::listeners::sentio_prestate::Listener;
 pub struct Formatter<B, C>
 	where
 		B: BlockT,
-		C:ProvideRuntimeApi<B>,
+		C: ProvideRuntimeApi<B>,
 		C::Api: EthereumRuntimeRPCApi<B>,
 		C::Api: BlockBuilder<B> {
 	_b: PhantomData<B>,
@@ -35,7 +36,7 @@ pub struct Formatter<B, C>
 impl<B, C> super::ResponseFormatter for Formatter<B, C>
 	where
 		B: BlockT,
-		C:ProvideRuntimeApi<B> + 'static,
+		C: ProvideRuntimeApi<B> + 'static,
 		C::Api: EthereumRuntimeRPCApi<B>,
 		C::Api: BlockBuilder<B>
 {
