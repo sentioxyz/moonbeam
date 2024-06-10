@@ -22,9 +22,11 @@ use tokio::{
 	sync::{oneshot, Semaphore},
 };
 
+use ethereum_types::H256;
 use fc_rpc::{frontier_backend_client, internal_err};
 use fc_storage::StorageOverride;
 use fp_rpc::EthereumRuntimeRPCApi;
+use jsonrpsee::core::__reexports::serde_json;
 use moonbeam_client_evm_tracing::{formatters::ResponseFormatter, types::single};
 use moonbeam_rpc_core_types::{RequestBlockId, RequestBlockTag};
 use moonbeam_rpc_primitives_debug::{DebugRuntimeApi, TracerInput};
@@ -124,7 +126,6 @@ impl DebugServer for Debug {
 			})
 	}
 
-<<<<<<< HEAD
 	/// Handler for `debug_traceCall` request. Communicates with the service-defined task
 	/// using channels.
 	async fn trace_call(
@@ -293,39 +294,6 @@ where
 							);
 						});
 					}
-					// Some(((RequesterInput::StorageRange(storage_range), ..), response_tx)) => {
-					// 	let client = client.clone();
-					// 	let backend = backend.clone();
-					// 	let frontier_backend = frontier_backend.clone();
-					// 	let permit_pool = permit_pool.clone();
-					// 	let overrides = overrides.clone();
-
-					// 	tokio::task::spawn(async move {
-					// 		let _ = response_tx.send(
-					// 			async {
-					// 				let _permit = permit_pool.acquire().await;
-
-					// 				tokio::task::spawn_blocking(move || {
-					// 					Self::handle_storage_range_request(
-					// 						client.clone(),
-					// 						backend.clone(),
-					// 						frontier_backend.clone(),
-					// 						storage_range,
-					// 						overrides.clone(),
-					// 					)
-					// 				})
-					// 				.await
-					// 				.map_err(|e| {
-					// 					internal_err(format!(
-					// 						"Internal error on spawned task : {:?}",
-					// 						e
-					// 					))
-					// 				})?
-					// 			}
-					// 			.await,
-					// 		);
-					// 	});
-					// }
 					_ => {}
 				}
 			}
