@@ -41,7 +41,7 @@ use std::{collections::HashMap, str::FromStr, vec, vec::Vec};
 use crate::listeners::sentio_util::{
 	copy_memory, copy_stack, format_memory, stack_back, to_opcode, unpack_revert,
 };
-use crate::types::sentio;
+use crate::types::{sentio};
 use crate::types::sentio::{
 	FunctionInfo, SentioBaseTrace, SentioCallTrace, SentioEventTrace, SentioTrace,
 };
@@ -750,6 +750,7 @@ impl Listener {
 					}
 				}
 			}
+			EvmEvent::Log { .. } => {}
 		}
 	}
 
