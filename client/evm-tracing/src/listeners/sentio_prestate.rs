@@ -268,6 +268,7 @@ impl<B, C> Listener<B, C>
 			EvmEvent::Exit { .. } => {
 				self.context_stack.pop();
 			}
+			EvmEvent::Log { .. } => {}
 		}
 	}
 

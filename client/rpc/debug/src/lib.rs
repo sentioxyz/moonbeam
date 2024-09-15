@@ -26,7 +26,6 @@ use ethereum_types::H256;
 use fc_rpc::{frontier_backend_client, internal_err};
 use fc_storage::StorageOverride;
 use fp_rpc::EthereumRuntimeRPCApi;
-use jsonrpsee::core::__reexports::serde_json;
 use moonbeam_client_evm_tracing::{formatters::ResponseFormatter, types::single};
 use moonbeam_rpc_core_types::{RequestBlockId, RequestBlockTag};
 use moonbeam_rpc_primitives_debug::{DebugRuntimeApi, TracerInput};
@@ -42,6 +41,7 @@ use sp_runtime::{
 	traits::{BlakeTwo256, Block as BlockT, Header as HeaderT, UniqueSaturatedInto},
 };
 use std::{future::Future, marker::PhantomData, sync::Arc};
+use moonbeam_client_evm_tracing::types::sentio;
 
 pub enum RequesterInput {
 	Call((RequestBlockId, TraceCallParams)),
@@ -328,18 +328,13 @@ where
 					} else if tracer == "sentioTracer" {
 						return Ok((
 							TracerInput::None,
-							single::TraceType::SentioCallList {
-								tracer_config: tracer_config
-									.map(|x| serde_json::from_value(x).unwrap_or_default()),
-							},
+							single::TraceType::SentioCallList, tracer_config,
 						));
 					} else if tracer == "sentioPrestateTracer" {
 						return Ok((
 							TracerInput::None,
-							single::TraceType::SentioPrestate {
-								tracer_config: tracer_config
-									.map(|x| serde_json::from_value(x).unwrap_or_default()),
-							},
+							single::TraceType::SentioPrestate,
+							tracer_config
 						));
 					} else {
 						None
@@ -724,9 +719,17 @@ where
 							)?,
 						))
 					}
-					single::TraceType::SentioCallList { tracer_config } => {
+					single::TraceType::SentioCallList => {
+						let tracer_config_or_default = tracer_config.unwrap_or_default();
+
 						let mut proxy = moonbeam_client_evm_tracing::listeners::SentioCallList::new(
-							tracer_config.unwrap_or_default(),
+							// tracer_config.unwrap_or_default(),
+							sentio::SentioTracerConfig {
+								functions: tracer_config_or_default.functions,
+								calls: tracer_config_or_default.calls,
+								debug: tracer_config_or_default.debug,
+								with_internal_calls: tracer_config_or_default.with_internal_calls,
+							}
 						);
 						proxy.using(f)?;
 						proxy.finish_transaction();
@@ -738,7 +741,9 @@ where
 
 						Ok(Response::Single(res.pop().expect("Trace result is empty.")))
 					}
-					single::TraceType::SentioPrestate { tracer_config } => {
+					single::TraceType::SentioPrestate => {
+						let tracer_config_or_default = tracer_config.unwrap_or_default();
+
 						let new_api = client.runtime_api();
 						new_api
 							.initialize_block(parent_block_hash, &header)
@@ -750,7 +755,10 @@ where
 							B,
 							C,
 						> = moonbeam_client_evm_tracing::listeners::SentioPrestate::new(
-							tracer_config.unwrap_or_default(),
+							sentio::SentioPrestateTracerConfig {
+								diff_mode: tracer_config_or_default.diff_mode,
+								debug: tracer_config_or_default.debug,
+							},
 							header.parent_hash().clone(),
 							try_ext,
 							block.header.beneficiary.clone(),
