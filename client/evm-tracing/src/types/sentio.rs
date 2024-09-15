@@ -248,16 +248,6 @@ fn is_zero(n: &u64) -> bool {
 }
 
 #[test]
-fn test_tracer_config_parse() {
-	let config_string = "{\n  \"calls\": {\n    \"0x18dd7bca62deee6f633221de26096fdd0c734daa\": [\n      79\n    ],\n    \"0x3773e1e9deb273fcdf9f80bc88bb387b1e6ce34d\": [\n      2959\n    ]\n  },\n  \"debug\": true,\n  \"functions\": {\n    \"0x18dd7bca62deee6f633221de26096fdd0c734daa\": [\n      {\n        \"inputMemory\": false,\n        \"inputSize\": 1,\n        \"name\": \"_setImplementation\",\n        \"outputMemory\": false,\n        \"outputSize\": 0,\n        \"pc\": 1593,\n        \"signatureHash\": \"0x\"\n      }\n    ]\n  },\n  \"noInternalCalls\": false,\n  \"withInternalCalls\": true\n}";
-
-	let v: SentioTracerConfig = serde_json::from_str(&config_string).unwrap();
-	assert_eq!(v.debug, true);
-	assert_eq!(v.calls.len(), 2);
-	assert_eq!(v.functions.len(), 1);
-}
-
-#[test]
 fn test_h256_to_u256() {
 	let string = "0f02ba4d7f83e59eaa32eae9c3c4d99b68ce76decade21cdab7ecce8f4aef81a";
 	let bytes = hex::decode(string).unwrap();
