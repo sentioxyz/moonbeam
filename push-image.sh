@@ -2,7 +2,7 @@
 
 cargo build --release
 
-VERSION=v0.40.0-3101-latest
+VERSION=v0.41.1-3300-latest
 
 cp target/release/moonbeam .
 
