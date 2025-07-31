@@ -11,7 +11,7 @@ pub fn copy_stack(stack: &Stack, copy_size: usize) -> Vec<U256> {
 	let mut res: Vec<U256> = vec![U256::zero(); stack_size - copy_size];
 
 	for i in (stack_size - copy_size)..stack_size {
-		res.push(U256::from(stack.data[i].as_bytes()));
+		res.push(U256::from_big_endian(stack.data[i].as_bytes()));
 	}
 	return res;
 }
@@ -232,7 +232,7 @@ pub fn unpack_revert(output: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn length_prefix_points_to(index: usize, output: &[u8]) -> Option<(usize, usize)> {
-	let mut big_offset_end = U256::from(&output[index..index + 32]);
+	let mut big_offset_end = U256::from_big_endian(&output[index..index + 32]);
 	big_offset_end = big_offset_end + U256::from(32);
 	let output_length = U256::from(output.len());
 
@@ -247,7 +247,7 @@ fn length_prefix_points_to(index: usize, output: &[u8]) -> Option<(usize, usize)
 	}
 
 	let offset_end = big_offset_end.as_u64() as usize;
-	let length_big = U256::from(&output[offset_end - 32..offset_end]);
+	let length_big = U256::from_big_endian(&output[offset_end - 32..offset_end]);
 
 	let total_size = big_offset_end + length_big;
 	if total_size.bits() > 63 {

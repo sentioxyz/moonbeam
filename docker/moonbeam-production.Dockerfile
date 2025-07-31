@@ -25,20 +25,21 @@ RUN rustup default stable
 # rustup version are pinned in the rust-toolchain file
 
 # Clone the Moonbeam repository
-RUN echo "*** Cloning Moonbeam ***" && \
-	if git ls-remote --heads https://github.com/moonbeam-foundation/moonbeam.git $COMMIT | grep -q $COMMIT; then \
-	echo "Cloning branch $COMMIT"; \
-	git clone --depth=1 --branch $COMMIT https://github.com/moonbeam-foundation/moonbeam.git; \
-	elif git ls-remote --tags https://github.com/moonbeam-foundation/moonbeam.git $COMMIT | grep -q $COMMIT; then \
-	echo "Cloning tag $COMMIT"; \
-	git clone --depth=1 --branch $COMMIT https://github.com/moonbeam-foundation/moonbeam.git; \
-	else \
-	echo "Cloning specific commit $COMMIT"; \
-	git clone --depth=1 https://github.com/moonbeam-foundation/moonbeam.git && \
-	cd moonbeam && \
-	git fetch origin $COMMIT && \
-	git checkout $COMMIT; \
-	fi
+# RUN echo "*** Cloning Moonbeam ***" && \
+# 	if git ls-remote --heads https://github.com/moonbeam-foundation/moonbeam.git $COMMIT | grep -q $COMMIT; then \
+# 	echo "Cloning branch $COMMIT"; \
+# 	git clone --depth=1 --branch $COMMIT https://github.com/moonbeam-foundation/moonbeam.git; \
+# 	elif git ls-remote --tags https://github.com/moonbeam-foundation/moonbeam.git $COMMIT | grep -q $COMMIT; then \
+# 	echo "Cloning tag $COMMIT"; \
+# 	git clone --depth=1 --branch $COMMIT https://github.com/moonbeam-foundation/moonbeam.git; \
+# 	else \
+# 	echo "Cloning specific commit $COMMIT"; \
+# 	git clone --depth=1 https://github.com/moonbeam-foundation/moonbeam.git && \
+# 	cd moonbeam && \
+# 	git fetch origin $COMMIT && \
+# 	git checkout $COMMIT; \
+# 	fi
+ADD . moonbeam
 
 WORKDIR /moonbeam/moonbeam
 
@@ -46,22 +47,22 @@ WORKDIR /moonbeam/moonbeam
 RUN rustc --print target-cpus
 
 RUN echo "*** Building Moonbeam ***"
-RUN cargo build --profile=production --all
+RUN cargo build --profile=production --all --features=evm-tracing
 
-FROM debian:stable-slim
+FROM moonbeamfoundation/moonbeam-tracing:v0.46.0-3800-latest
 LABEL maintainer="alan@moonsonglabs.com"
 LABEL description="Production Binary for Moonbeam Nodes"
 
-RUN useradd -m -u 1000 -U -s /bin/sh -d /moonbeam moonbeam && \
-	mkdir -p /moonbeam/.local/share && \
-	mkdir /data && \
-	chown -R moonbeam:moonbeam /data && \
-	ln -s /data /moonbeam/.local/share/moonbeam && \
-	rm -rf /usr/sbin
+# RUN useradd -m -u 1000 -U -s /bin/sh -d /moonbeam moonbeam && \
+# 	mkdir -p /moonbeam/.local/share && \
+# 	mkdir /data && \
+# 	chown -R moonbeam:moonbeam /data && \
+# 	ln -s /data /moonbeam/.local/share/moonbeam && \
+# 	rm -rf /usr/sbin
 
 USER moonbeam
 
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder --chown=moonbeam /moonbeam/target/production/moonbeam /moonbeam/moonbeam
 
 RUN chmod uog+x /moonbeam/moonbeam

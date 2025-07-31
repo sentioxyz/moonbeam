@@ -254,7 +254,7 @@ fn test_h256_to_u256() {
 	let h256 = H256::from_slice(&bytes);
 	let h256_bytes = h256.as_bytes();
 	assert_eq!(h256_bytes, bytes);
-	let u256 = U256::from(h256_bytes);
+	let u256 = U256::from_big_endian(h256_bytes);
 	let u256_string = serde_json::to_string(&u256).unwrap();
 	let u256_sub = "0".to_string() + &u256_string[3..u256_string.len() - 1].to_string();
 	assert_eq!(string, u256_sub);
