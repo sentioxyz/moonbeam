@@ -16,4 +16,4 @@ docker build . -t ghcr.io/sentioxyz/moonbeam:$VERSION
 rm Dockerfile
 rm moonbeam
 
-docker push  ghcr.io/sentioxyz/moonbeam:$VERSION
+docker push  us-west1-docker.pkg.dev/sentio-352722/sentio/moonbeam:$VERSION

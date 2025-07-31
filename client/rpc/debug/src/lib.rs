@@ -570,6 +570,12 @@ where
 											TransactionTrace::CallList(_) => {
 												(Default::default(), None)
 											}
+											TransactionTrace::SentioCallTrace(_) => {
+												(Default::default(), None)
+											}
+											TransactionTrace::SentioPrestateTrace(_) => {
+												(Default::default(), None)
+											}
 											TransactionTrace::CallListNested(ref call) => {
 												match call {
 													single::Call::Blockscout(_) => {
