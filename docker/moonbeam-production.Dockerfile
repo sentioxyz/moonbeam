@@ -49,7 +49,7 @@ RUN rustc --print target-cpus
 RUN echo "*** Building Moonbeam ***"
 RUN cargo build --profile=production --all --features=evm-tracing
 
-FROM moonbeamfoundation/moonbeam-tracing:v0.46.0-3800-latest
+FROM moonbeamfoundation/moonbeam-tracing:v0.47.1-3900-latest
 LABEL maintainer="alan@moonsonglabs.com"
 LABEL description="Production Binary for Moonbeam Nodes"
 
