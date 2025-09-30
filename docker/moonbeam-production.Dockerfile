@@ -2,6 +2,8 @@
 #
 # Requires to run from repository root and to copy the binary in the build folder (part of the release workflow)
 
+ARG VERSION="latest"
+
 FROM docker.io/library/ubuntu:22.04 AS builder
 
 # Branch or tag to build moonbeam from
@@ -49,7 +51,7 @@ RUN rustc --print target-cpus
 RUN echo "*** Building Moonbeam ***"
 RUN cargo build --profile=production --all --features=evm-tracing
 
-FROM moonbeamfoundation/moonbeam-tracing:v0.47.1-3900-latest
+FROM moonbeamfoundation/moonbeam-tracing:${VERSION}
 LABEL maintainer="alan@moonsonglabs.com"
 LABEL description="Production Binary for Moonbeam Nodes"
 
